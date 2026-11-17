@@ -1,0 +1,295 @@
+import type {
+  PackStatus,
+  ScanMode,
+  ScanPackBatch,
+  ScanPackOrder,
+} from "../types/scanAndPack.types";
+import type { PacklogSortKey } from "@shared/types/scanpack";
+
+// Packlog client — ported from TrackVid-FE, where it calls TrackVid-BE's
+// /packlog API. Here the same calls go to the agent's main process over IPC
+// (electron/main/scanpack), which keeps the records on this computer and the
+// PDFs in the folder chosen in Settings under `scan-and-pack/<date>/<packlogId>/`.
+//
+// Every call resolves to the shape the screens already unwrap —
+// `response.data.data` (axios response → backend envelope → payload) — so the
+// ported pages read it unchanged.
+
+// ---------------------------------------------------------------------------
+// BE → FE adapters
+//
+// The BE persists Mongo documents keyed on `_id` with `label/invoiceS3Key`
+// pointers. The FE rendering layer expects a `ScanPackBatch` shape (identity
+// keyed on `id/batchId`, orders with a `mapping.labelPages/invoicePages` page
+// index array). These helpers translate between the two so pages can keep
+// their current props / grids untouched.
+// ---------------------------------------------------------------------------
+
+interface ServerPacklogSummary {
+  _id: string;
+  packlogId: string;
+  platform: string;
+  scanMode?: ScanMode;
+  orderFileName: string;
+  headers?: string[];
+  sortKey?: PacklogSortKey | null;
+  totalOrders: number;
+  mappedCount: number;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+}
+
+interface ServerPacklogOrder {
+  _id: string;
+  packlogId: string;
+  rowIndex: number;
+  awb: string;
+  awbRaw: string;
+  rawRow?: Record<string, string>;
+  /** Absolute paths of the stored PDFs on this computer, null until uploaded. */
+  labelFile?: string | null;
+  invoiceFile?: string | null;
+  /** AGENT: the part as pages of the packlog's source PDF (nothing cut at upload). */
+  labelRef?: { docId: string; pages: number[] } | null;
+  invoiceRef?: { docId: string; pages: number[] } | null;
+  labelPageCount?: number;
+  invoicePageCount?: number;
+  mappedAt?: string | null;
+  /**
+   * Packing state. Optional on the wire on purpose: rows written before the
+   * field existed carry neither key, and `adaptPacklogDetail` reads that
+   * absence as "ready" rather than treating it as corrupt.
+   */
+  packStatus?: PackStatus;
+  packedAt?: string | null;
+  masterSku?: string | null;
+  distributionCode?: string | null;
+}
+
+interface ServerPacklogDetail {
+  packlog: ServerPacklogSummary;
+  orders: ServerPacklogOrder[];
+}
+
+/**
+ * Summary → `ScanPackBatch` without orders (list rows don't need them).
+ * `orders` stays empty; the batch-list page renders from the summary's
+ * `totalOrders` / `mappedCount` via a separate BatchRow.
+ */
+export const adaptPacklogSummary = (s: ServerPacklogSummary): ScanPackBatch => ({
+  id: String(s._id),
+  batchId: s.packlogId,
+  createdAt: s.createdAt,
+  updatedAt: s.updatedAt,
+  platform: s.platform,
+  orderFileName: s.orderFileName,
+  headers: s.headers ?? [],
+  orders: [],
+  documentNames: [],
+  scanMode: s.scanMode,
+  sortKey: s.sortKey ?? null,
+});
+
+/**
+ * Detail → full `ScanPackBatch`. Order rows carry a synthetic `mapping`
+ * whose `label/invoicePages` array length matches the server-reported page
+ * count — the FE only reads `.length`, never the individual entries, so a
+ * length-N zero-array is a faithful stand-in for the legacy IndexedDB shape.
+ */
+export const adaptPacklogDetail = (d: ServerPacklogDetail): ScanPackBatch => {
+  const orders: ScanPackOrder[] = (d.orders ?? []).map((o) => {
+    const hasLabel = Boolean(o.labelFile || o.labelRef);
+    const hasInvoice = Boolean(o.invoiceFile || o.invoiceRef);
+    return {
+    id: String(o._id),
+    rowIndex: o.rowIndex,
+    awb: o.awb,
+    awbRaw: o.awbRaw,
+    raw: o.rawRow ?? {},
+    mapping:
+      hasLabel || hasInvoice
+        ? {
+            docId: String(o._id),
+            labelPages: Array(o.labelRef?.pages.length ?? o.labelPageCount ?? (hasLabel ? 1 : 0)).fill(0),
+            invoicePages: Array(o.invoiceRef?.pages.length ?? o.invoicePageCount ?? (hasInvoice ? 1 : 0)).fill(0),
+          }
+        : null,
+    // Anything that is not literally "packed" is ready — an absent field on a
+    // pre-existing row, and any value the server might add later that this
+    // build does not know about, both land on the safe side.
+    packStatus: o.packStatus === "packed" ? "packed" : "ready",
+    packedAt: o.packedAt ?? null,
+    masterSku: o.masterSku ?? null,
+    distributionCode: o.distributionCode ?? null,
+    };
+  });
+  return {
+    ...adaptPacklogSummary(d.packlog),
+    orders,
+  };
+};
+
+/** Also exposed so pages can build lightweight row objects. */
+export const summaryCounts = (s: ServerPacklogSummary) => ({
+  totalOrders: s.totalOrders,
+  mappedCount: s.mappedCount,
+});
+
+type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Unwrap an IPC result into the axios-style `{ data: { data } }` the pages read. */
+const envelope = async <T>(call: Promise<IpcResult<T>>) => {
+  const result = await call;
+  // The web app's axios interceptor rejects with the server's message as a
+  // string; the pages handle both that and an Error, so an Error is used here.
+  if (!result.ok) throw new Error(result.error);
+  return { data: { isSuccess: true, data: result.value } };
+};
+
+const api = () => window.printAgent.scanPack;
+
+export interface CreatePacklogOrderPayload {
+  rowIndex: number;
+  awb: string;
+  awbRaw: string;
+  rawRow: Record<string, string>;
+}
+
+export interface CreatePacklogPayload {
+  packlogId: string;
+  platform: string;
+  scanMode: ScanMode;
+  orderFileName: string;
+  headers: string[];
+  sortKey?: PacklogSortKey | null;
+  orders: CreatePacklogOrderPayload[];
+}
+
+const createPacklog = (payload: CreatePacklogPayload) => envelope(api().create(payload));
+
+const listPacklogs = (opts: { page?: number; limit?: number; platform?: string; sorted?: boolean } = {}) =>
+  envelope(api().list(opts));
+
+const getPacklog = (id: string) => envelope(api().get(id));
+
+const deletePacklog = (id: string) => envelope(api().remove(id));
+
+/**
+ * Save one part (label OR invoice) for one order. `bytes` is the sliced PDF
+ * produced by `buildOrderPdf(order, part)`; the main process writes it to
+ * `<folder>/scan-and-pack/<date>/<packlogId>/<packlogId>-<part>-<awb>.pdf`.
+ */
+const uploadPart = (
+  packlogObjectId: string,
+  orderObjectId: string,
+  part: "label" | "invoice",
+  bytes: Uint8Array,
+  pageCount: number,
+  _awb: string
+) => envelope(api().upload(packlogObjectId, orderObjectId, part, bytes, pageCount));
+
+/** A stored PDF as raw bytes, for the preview and the print flow. */
+const downloadPart = async (
+  packlogObjectId: string,
+  orderObjectId: string,
+  part: "label" | "invoice"
+): Promise<ArrayBuffer> => {
+  const result = await api().download(packlogObjectId, orderObjectId, part);
+  if (!result.ok) throw new Error(result.error);
+  const bytes = result.value;
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+};
+
+/** Many orders' parts as one PDF, in the given order, built in one pass by the agent. */
+const buildPartsPdf = async (
+  packlogObjectId: string,
+  orderObjectIds: string[],
+  parts: ("label" | "invoice")[]
+): Promise<Uint8Array> => {
+  const result = await api().buildPdf(packlogObjectId, orderObjectIds, parts);
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+};
+
+/** The same PDF, saved by the agent straight to Downloads; resolves to its path. */
+const savePartsPdf = async (
+  packlogObjectId: string,
+  orderObjectIds: string[],
+  parts: ("label" | "invoice")[],
+  fileName: string
+) => {
+  const result = await api().savePartsPdf(packlogObjectId, orderObjectIds, parts, fileName);
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+};
+
+/** One PDF per group of orders, zipped and saved by the agent to Downloads; resolves to its path. */
+const saveBundlesZip = async (
+  packlogObjectId: string,
+  groups: { name: string; orderIds: string[] }[],
+  parts: ("label" | "invoice")[],
+  fileName: string
+) => {
+  const result = await api().saveBundlesZip(packlogObjectId, groups, parts, fileName);
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+};
+
+/**
+ * AGENT: save one uploaded label/invoice PDF once, in the packlog's week
+ * folder. Replaces cutting and saving a PDF per order.
+ */
+const saveSource = (packlogObjectId: string, docId: string, name: string, bytes: Uint8Array, pageCount: number) =>
+  envelope(api().saveSource(packlogObjectId, docId, name, bytes, pageCount));
+
+/** AGENT: point every order at its pages of a saved source — one call per upload. */
+const mapOrders = (
+  packlogObjectId: string,
+  maps: { orderId: string; docId: string; labelPages: number[]; invoicePages: number[] }[]
+) => envelope(api().mapOrders(packlogObjectId, maps));
+
+/** Change the packlog's label sort (null: sheet order). Saved with the packlog. */
+const setSortKey = (packlogObjectId: string, sortKey: PacklogSortKey | null) =>
+  unwrap(api().setSortKey(packlogObjectId, sortKey));
+
+/** Store the distribution code read off each order's label (Flipkart). */
+const setDistributionCodes = (packlogObjectId: string, codes: { orderId: string; code: string }[]) =>
+  envelope(api().setDistributionCodes(packlogObjectId, codes));
+
+/** Mark one order packed. Idempotent: a second call keeps the first `packedAt`. */
+const markPacked = (packlogObjectId: string, orderObjectId: string) =>
+  envelope(api().markPacked(packlogObjectId, orderObjectId));
+
+/** The SKU Mapping (`master-sku`) table. These return the payload directly. */
+const unwrap = async <T>(call: Promise<IpcResult<T>>): Promise<T> => {
+  const result = await call;
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+};
+
+export const MasterSkuService = {
+  summary: () => unwrap(api().masterSkuSummary()),
+  list: () => unwrap(api().masterSkuList()),
+  /** Merge a sheet into the table (no duplicate pairs); packlogs are re-tagged. */
+  import: (fileName: string, pairs: { listingSku: string; masterSku: string }[]) =>
+    unwrap(api().masterSkuImport(fileName, pairs)),
+  clear: () => unwrap(api().masterSkuClear()),
+};
+
+export const PacklogService = {
+  createPacklog,
+  listPacklogs,
+  getPacklog,
+  deletePacklog,
+  uploadPart,
+  downloadPart,
+  buildPartsPdf,
+  savePartsPdf,
+  saveBundlesZip,
+  markPacked,
+  saveSource,
+  mapOrders,
+  setDistributionCodes,
+  setSortKey,
+};
