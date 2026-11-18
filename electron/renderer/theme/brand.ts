@@ -16,4 +16,4 @@ export const SIDEBAR = {
   panelBorder: 'rgb(255 255 255 / 0.08)'
 } as const
 
-export const USER = { name: 'Trackvid User', initials: 'TU' } as const
+export const USER = { name: 'Local User', initials: 'LU' } as const

@@ -3,7 +3,7 @@ import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import { FiberSmartRecordOutlined } from '@mui/icons-material'
 import type { AgentState } from '@shared/types/agent'
 import { SIDEBAR } from '../theme/brand'
-import logo from '../assets/logo.svg'
+import logo from '../assets/app-icon.png'
 
 export type Page = 'home' | 'recorder' | 'settings'
 
@@ -37,8 +37,8 @@ const Sidebar = ({ page, onNavigate, state }: { page: Page; onNavigate: (page: P
       })}
     >
       <Stack direction='row' spacing={1.5} alignItems='center' sx={{ px: 1.5, mb: 6 }}>
-        <Box component='img' src={logo} alt='' sx={{ width: 34, height: 28 }} />
-        <Typography sx={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>TrackVid</Typography>
+        <Box component='img' src={logo} alt='' sx={{ width: 32, height: 32, borderRadius: '8px' }} />
+        <Typography sx={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>Featured App</Typography>
       </Stack>
 
       <Stack component='nav' spacing={1} aria-label='Main'>

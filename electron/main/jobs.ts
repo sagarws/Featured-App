@@ -148,7 +148,7 @@ const refusal = (printer: AgentPrinter): string => {
   const who = printer.displayName
   switch (printer.status.state) {
     case 'paused':
-      return `${who} is paused on this computer, so nothing would print. Open the TrackVid Print Agent and press Resume.`
+      return `${who} is paused on this computer, so nothing would print. Open Featured App and press Resume.`
     case 'offline':
       return `${who} is offline (${printer.status.message}). Switch it on and check it is connected, then print again.`
     default:

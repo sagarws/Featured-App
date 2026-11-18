@@ -1,4 +1,4 @@
-# TrackVid Print Agent
+# Featured App
 
 A small desktop app (Electron) that runs on each packing computer and lets the
 TrackVid web app print label / invoice PDFs **silently to a named printer**.

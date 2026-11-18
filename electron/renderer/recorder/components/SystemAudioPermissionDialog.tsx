@@ -67,7 +67,7 @@ const SystemAudioPermissionDialog = () => {
           {denied ? (
             <Typography variant='body2' color='text.secondary'>
               macOS has not given this app system-audio access. Click <b>Open System Settings</b>. Under <b>System Audio Recording Only</b> (the
-              lower list), click <b>+</b> and add <b>TrackVid Print Agent</b>, or switch it on if it is already there. Then come back here.
+              lower list), click <b>+</b> and add <b>Featured App</b>, or switch it on if it is already there. Then come back here.
               Being switched on in the upper <b>Screen &amp; System Audio Recording</b> list alone is not enough: that covers the screen, and
               system audio is checked separately.
             </Typography>

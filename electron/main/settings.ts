@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import type { ThemeMode } from '@shared/types/agent'
@@ -44,6 +44,22 @@ let cached: AgentSettings | null = null
 
 const filePath = (): string => join(app.getPath('userData'), 'settings.json')
 
+/** The app was called "TrackVid Print Agent" before; keep its settings on first start under the new name. */
+const LEGACY_DIR_NAME = 'TrackVid Print Agent'
+const migrateLegacySettings = (): void => {
+  try {
+    const target = filePath()
+    if (existsSync(target)) return
+    const legacy = join(app.getPath('appData'), LEGACY_DIR_NAME, 'settings.json')
+    if (!existsSync(legacy)) return
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(legacy, target)
+    logger.info('Settings carried over from the previous app name')
+  } catch (error) {
+    logger.warn('Could not carry over the previous settings', error)
+  }
+}
+
 const sanitise = (raw: unknown): AgentSettings => {
   const base = defaults()
   if (!raw || typeof raw !== 'object') return base
@@ -69,6 +85,7 @@ const sanitise = (raw: unknown): AgentSettings => {
 
 export const getSettings = (): AgentSettings => {
   if (cached) return cached
+  migrateLegacySettings()
   try {
     cached = sanitise(readDurableJson(filePath()))
   } catch (error) {

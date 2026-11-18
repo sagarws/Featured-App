@@ -75,7 +75,7 @@ const announceChanges = (previous: AgentPrinter[], next: AgentPrinter[]): void =
     const nowProblem = PROBLEM_STATES.includes(printer.status.state)
     const changed = old.state !== printer.status.state || old.message !== printer.status.message
     if (nowProblem && changed && (used.has(printer.name) || printer.queue.length > 0)) {
-      notifyUser(`${printer.displayName}: ${printer.status.message}`, 'Print jobs for this printer are waiting. Open the Print Agent for details.')
+      notifyUser(`${printer.displayName}: ${printer.status.message}`, 'Print jobs for this printer are waiting. Open Featured App for details.')
     }
     if (!nowProblem && PROBLEM_STATES.includes(old.state) && used.has(printer.name)) {
       logger.info('Printer recovered', { printer: printer.name, state: printer.status.state })

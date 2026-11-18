@@ -268,7 +268,7 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
                 }
               >
                 {permission === 'denied'
-                  ? 'System audio is turned off for this app. In System Settings → Screen & System Audio Recording, add or switch on TrackVid Print Agent in the lower list, System Audio Recording Only, then come back.'
+                  ? 'System audio is turned off for this app. In System Settings → Screen & System Audio Recording, add or switch on Featured App in the lower list, System Audio Recording Only, then come back.'
                   : 'Allow system audio to record other people in calls, videos and apps.'}
               </Alert>
             )}

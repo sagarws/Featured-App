@@ -63,7 +63,7 @@ export type Config = {
 }
 
 const themeConfig: Config = {
-  templateName: 'TrackVid Print Agent',
+  templateName: 'Featured App',
   homePageUrl: '/dashboards/crm',
   // LIGHT, not 'system'. The app is used on machines whose OS theme is set
   // for everything else on them, and a claim screen flipping to dark at sunset

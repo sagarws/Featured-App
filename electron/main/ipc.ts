@@ -71,7 +71,7 @@ export const registerIpc = (): void => {
     const job = await submitJob({
       bytes: buildTestPdf(printer, new Date()),
       printer,
-      name: 'TrackVid test page',
+      name: 'Featured App test page',
       source: 'Test print',
       format: 'pdf'
     })

@@ -1,6 +1,6 @@
-appId: com.trackvid.printagent
-productName: TrackVid Print Agent
-copyright: Copyright © 2026 TrackVid
+appId: com.featured.app
+productName: Featured App
+copyright: Copyright © 2026 Featured App
 directories:
   buildResources: build
   output: release/${version}
@@ -27,14 +27,14 @@ extraResources:
 win:
   target:
     - nsis
-  artifactName: TrackVid-Print-Agent-${arch}-setup.${ext}
+  artifactName: Featured-App-${arch}-setup.${ext}
 nsis:
   oneClick: true
   perMachine: false
   runAfterFinish: true
   createDesktopShortcut: false
   createStartMenuShortcut: true
-  shortcutName: TrackVid Print Agent
+  shortcutName: Featured App
 mac:
   category: public.app-category.business
   # Recorder: checks/asks for the "System Audio Recording" permission
@@ -47,7 +47,7 @@ mac:
       arch:
         - x64
         - arm64
-  artifactName: TrackVid-Print-Agent-${arch}.${ext}
+  artifactName: Featured-App-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
@@ -60,4 +60,4 @@ mac:
     NSCameraUsageDescription: Records your webcam and shows the camera bubble on screen recordings.
     NSAudioCaptureUsageDescription: Records the sound your computer plays (meetings, browser, apps) when you choose System audio.
 dmg:
-  artifactName: TrackVid-Print-Agent-${arch}.${ext}
+  artifactName: Featured-App-${arch}.${ext}

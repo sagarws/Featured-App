@@ -30,10 +30,10 @@ const HomePage = ({ state, query }: { state: AgentState; query: string }) => {
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant='h4' sx={{ fontSize: 24, fontWeight: 700 }}>
-            TrackVid Print Agent
+            Featured App
           </Typography>
           <Typography color='text.secondary' sx={{ mt: 0.5, maxWidth: 560, fontSize: 14 }}>
-            Lets TrackVid Scan &amp; Pack print labels and invoices straight to this computer's printers, without a print
+            Lets the TrackVid website print labels and invoices straight to this computer's printers, without a print
             dialog. Keep it running — closing this window keeps it in the{' '}
             {state.platform === 'darwin' ? 'menu bar' : 'system tray'}.
           </Typography>

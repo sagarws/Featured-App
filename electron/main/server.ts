@@ -278,7 +278,7 @@ const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (!origin || !allowed) {
-    sendJson(res, 403, { ok: false, error: 'This website is not allowed to print through the TrackVid Print Agent.' })
+    sendJson(res, 403, { ok: false, error: `This website is not allowed to print through ${APP_NAME}.` })
     return
   }
 

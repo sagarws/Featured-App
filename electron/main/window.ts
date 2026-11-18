@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, shell } from 'electron'
-import { WINDOW_DEFAULTS } from '@shared/constants/agent'
+import { APP_NAME, WINDOW_DEFAULTS } from '@shared/constants/agent'
 import { logger } from './logger'
 
 /**
@@ -39,7 +39,7 @@ export const createWindow = (options: { show: boolean }): BrowserWindow => {
     minWidth: WINDOW_DEFAULTS.minWidth,
     minHeight: WINDOW_DEFAULTS.minHeight,
     show: false,
-    title: 'TrackVid Print Agent',
+    title: APP_NAME,
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),

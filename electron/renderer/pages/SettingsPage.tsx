@@ -142,7 +142,7 @@ const SettingsPage = ({ state }: { state: AgentState }) => {
 
       <SectionCard icon='tabler-info-circle' tone='primary' title='About'>
         <Stack spacing={1.5}>
-          <Row title='Version' hint={`TrackVid Print Agent on ${platformLabel(state.platform)}`}>
+          <Row title='Version' hint={`Featured App on ${platformLabel(state.platform)}`}>
             <Typography variant='body2'>{state.version}</Typography>
           </Row>
           <Row

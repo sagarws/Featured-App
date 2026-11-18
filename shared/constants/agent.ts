@@ -5,8 +5,8 @@
  * PRINT_AGENT_*). Changing any value here without changing it there leaves
  * every packing bench falling back to the browser print dialog.
  */
-export const APP_ID = 'com.trackvid.printagent'
-export const APP_NAME = 'TrackVid Print Agent'
+export const APP_ID = 'com.featured.app'
+export const APP_NAME = 'Featured App'
 
 /** Loopback only. Never 0.0.0.0 — the agent must not be reachable from the LAN. */
 export const AGENT_HOST = '127.0.0.1'

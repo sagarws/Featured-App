@@ -6,7 +6,7 @@
 export const buildTestPdf = (printer: string, when: Date): Buffer => {
   const escape = (text: string) => text.replace(/[\\()]/g, match => `\\${match}`).replace(/[^\x20-\x7e]/g, '?')
   const lines = [
-    { size: 20, text: 'TrackVid Print Agent' },
+    { size: 20, text: 'Featured App' },
     { size: 12, text: 'Test page' },
     { size: 10, text: `Printer: ${printer}` },
     { size: 10, text: `Sent: ${when.toLocaleString()}` },

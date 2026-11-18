@@ -222,7 +222,7 @@ const sumatraPath = (() => {
     if (cached) return cached
     const dir = dirname(require.resolve('pdf-to-printer')).replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
     const exe = readdirSync(dir).find(name => /^SumatraPDF.*\.exe$/i.test(name))
-    if (!exe) throw new Error(`SumatraPDF.exe is missing from ${dir}. Reinstall the TrackVid Print Agent.`)
+    if (!exe) throw new Error(`SumatraPDF.exe is missing from ${dir}. Reinstall Featured App.`)
     cached = join(dir, exe)
     return cached
   }

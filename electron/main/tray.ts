@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, Menu, nativeImage, Tray } from 'electron'
+import { APP_NAME } from '@shared/constants/agent'
 import type { AgentState } from '@shared/types/agent'
 import { showWindow } from './window'
 
@@ -29,7 +30,7 @@ export const createTray = (
 ): void => {
   const image = nativeImage.createFromPath(iconPath()).resize({ width: 16, height: 16 })
   tray = new Tray(image)
-  tray.setToolTip('TrackVid Print Agent')
+  tray.setToolTip(APP_NAME)
   tray.on('click', () => {
     // Windows opens on a left click; macOS shows the menu, as menu-bar apps do.
     if (process.platform === 'win32') showWindow()
@@ -46,7 +47,7 @@ export const updateTray = (
     Menu.buildFromTemplate([
       { label: statusLine(state), enabled: false },
       { type: 'separator' },
-      { label: 'Open TrackVid Print Agent', click: () => showWindow() },
+      { label: `Open ${APP_NAME}`, click: () => showWindow() },
       {
         label: 'Start when I log in',
         type: 'checkbox',

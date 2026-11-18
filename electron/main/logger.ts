@@ -5,8 +5,8 @@ import { app } from 'electron'
 /**
  * A plain append-only log in the OS log folder, so a packer's "it didn't
  * print" can be answered from the machine afterwards:
- *   macOS    ~/Library/Logs/TrackVid Print Agent/agent.log
- *   Windows  %APPDATA%\TrackVid Print Agent\logs\agent.log
+ *   macOS    ~/Library/Logs/Featured App/agent.log
+ *   Windows  %APPDATA%\Featured App\logs\agent.log
  *
  * Rolled once at 5 MB to agent.old.log — two files, never more.
  */
