@@ -60,3 +60,50 @@ export const SCANPACK_IPC = {
   /** One-way: timing lines from the window, printed in the app's terminal. */
   perf: 'scanpack:perf'
 } as const
+
+/** Screen / webcam / audio recorder — see electron/main/recorder. */
+export const RECORDER_IPC = {
+  getStatus: 'recorder:get-status',
+  start: 'recorder:start',
+  pause: 'recorder:pause',
+  resume: 'recorder:resume',
+  stop: 'recorder:stop',
+  selectRegion: 'recorder:select-region',
+  listDisplays: 'recorder:list-displays',
+  storageInfo: 'recorder:storage-info',
+  getSettings: 'recorder:get-settings',
+  updateSettings: 'recorder:update-settings',
+  chooseOutputDir: 'recorder:choose-output-dir',
+  resetOutputDir: 'recorder:reset-output-dir',
+  list: 'recorder:list',
+  rename: 'recorder:rename',
+  remove: 'recorder:remove',
+  exportFile: 'recorder:export',
+  openLocation: 'recorder:open-location',
+  merge: 'recorder:merge',
+  listInterrupted: 'recorder:list-interrupted',
+  recover: 'recorder:recover',
+  openPrivacy: 'recorder:open-privacy',
+  /** Push: RecorderStatus, every second while recording and on every change. */
+  status: 'recorder:status',
+  /** Push: the library changed on disk. */
+  libraryChanged: 'recorder:library-changed',
+
+  // The hidden capture window (#engine).
+  engineConfig: 'recorder:engine-config',
+  engineReady: 'recorder:engine-ready',
+  engineFailed: 'recorder:engine-failed',
+  engineChunk: 'recorder:engine-chunk',
+  engineStopped: 'recorder:engine-stopped',
+  engineEvent: 'recorder:engine-event',
+  /** Push to the engine: 'pause' | 'resume' | 'stop'. */
+  engineCommand: 'recorder:engine-command',
+
+  // Region overlays (#region).
+  regionStarted: 'recorder:region-started',
+  regionDone: 'recorder:region-done',
+  /** Push to the other overlays: clear your selection. */
+  regionReset: 'recorder:region-reset',
+  /** Camera bubble (#camera): which camera to show. */
+  cameraDevice: 'recorder:camera-device'
+} as const

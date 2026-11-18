@@ -20,6 +20,10 @@ asarUnpack:
 extraResources:
   - from: build/icon.png
     to: trayIcon.png
+  # Recorder: LGPL ffmpeg + ffprobe for this platform/arch, from
+  # `npm run ffmpeg` (scripts/fetch-ffmpeg.cjs). Found at <resources>/ffmpeg.
+  - from: resources/ffmpeg/${os}-${arch}
+    to: ffmpeg
 win:
   target:
     - nsis
@@ -46,5 +50,9 @@ mac:
   # A menu-bar agent: no Dock icon until the window is opened.
   extendInfo:
     LSUIElement: true
+    # Recorder: shown in the macOS permission prompts.
+    NSMicrophoneUsageDescription: Records your voice when you choose the microphone as a recording source.
+    NSCameraUsageDescription: Records your webcam and shows the camera bubble on screen recordings.
+    NSAudioCaptureUsageDescription: Records the sound your computer plays (meetings, browser, apps) when you choose System audio.
 dmg:
   artifactName: TrackVid-Print-Agent-${arch}.${ext}

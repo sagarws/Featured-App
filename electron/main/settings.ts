@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import type { ThemeMode } from '@shared/types/agent'
+import type { RecorderSettings } from '@shared/types/recorder'
+import { sanitiseRecorderSettings } from '@shared/utils/recorder'
 import { normaliseOrigin } from '@shared/utils/origin'
 import { clampWeeks, clampWorkers, DEFAULT_EXTRACT_WORKERS, DEFAULT_WEEKS_KEPT } from '@shared/utils/weekFolder'
 import { readDurableJson, writeDurableJson } from './durableJson'
@@ -26,6 +28,8 @@ export interface AgentSettings {
   scanPackWeeksKept: number
   /** Utility processes cutting per-order PDFs in parallel after an upload. */
   scanPackWorkers: number
+  /** Screen / webcam / audio recording. */
+  recorder: RecorderSettings
 }
 
 const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system']
@@ -42,7 +46,8 @@ const defaults = (): AgentSettings => ({
   notifications: true,
   scanPackDir: null,
   scanPackWeeksKept: DEFAULT_WEEKS_KEPT,
-  scanPackWorkers: DEFAULT_EXTRACT_WORKERS
+  scanPackWorkers: DEFAULT_EXTRACT_WORKERS,
+  recorder: sanitiseRecorderSettings(null)
 })
 
 let cached: AgentSettings | null = null
@@ -72,7 +77,8 @@ const sanitise = (raw: unknown): AgentSettings => {
     scanPackWeeksKept:
       typeof value.scanPackWeeksKept === 'number' ? clampWeeks(value.scanPackWeeksKept) : base.scanPackWeeksKept,
     scanPackWorkers:
-      typeof value.scanPackWorkers === 'number' ? clampWorkers(value.scanPackWorkers) : base.scanPackWorkers
+      typeof value.scanPackWorkers === 'number' ? clampWorkers(value.scanPackWorkers) : base.scanPackWorkers,
+    recorder: sanitiseRecorderSettings(value.recorder)
   }
 }
 

@@ -155,3 +155,6 @@ release/
 
 # electron-builder output
 release/
+
+# Recorder: ffmpeg binaries fetched/built by scripts/fetch-ffmpeg.cjs
+resources/ffmpeg/

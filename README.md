@@ -17,6 +17,14 @@ npm run build:mac    # dmg (x64 + arm64)
 npm run build:win    # NSIS installer (x64)
 ```
 
+## Recorder
+
+Screen (full display or region), webcam and audio recording with system audio
+by default, 30-minute crash-safe segments, automatic merge and recovery of
+interrupted sessions. Sidebar → **Recorder**. Needs ffmpeg (bundled in packaged
+builds; `brew install ffmpeg` for development). Details, OS support and the test
+checklist: [docs/RECORDER.md](docs/RECORDER.md).
+
 ## API (loopback only)
 
 `GET /v1/status` → `{ ok, app, version, allowed, apiVersion: 2 }` answers any browser origin.

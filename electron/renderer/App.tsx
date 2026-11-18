@@ -12,6 +12,7 @@ import BackgroundProcessPage from './pages/BackgroundProcessPage'
 import SkuMappingPage from './scanpack/pages/SkuMappingPage'
 import LabelSortingPage from './scanpack/pages/LabelSortingPage'
 import PacklogJobsDock from './scanpack/background/PacklogJobsDock'
+import RecorderPage from './recorder/RecorderPage'
 
 const App = ({ state }: { state: AgentState }) => {
   const [page, setPage] = useState<Page>('home')
@@ -40,6 +41,7 @@ const App = ({ state }: { state: AgentState }) => {
         <TopBar query={query} onQueryChange={search} jobs={state.jobs} onOpenSettings={() => setPage('settings')} />
         <Box component='main' sx={{ flex: 1, overflow: 'auto', px: 5, py: 5 }}>
           {page === 'home' && <HomePage state={state} query={query} />}
+          {page === 'recorder' && <RecorderPage />}
           {page === 'scanpack' && (
             <ScanPackSection key={scanPackVisit} initialPath={scanPackPath} onPathChange={rememberScanPackPath} />
           )}

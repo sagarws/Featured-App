@@ -14,8 +14,16 @@ import { getSettings } from './settings'
 import { snapshot, subscribe } from './state'
 import { createTray, destroyTray, updateTray } from './tray'
 import { createWindow, markQuitting, showWindow } from './window'
+import { enableCaptureFeatures, registerDisplayMediaHandler } from './recorder/capture'
+import { registerRecorderIpc } from './recorder/ipc'
+import { markInterruptedSessions, registerMediaProtocol, registerMediaScheme } from './recorder/library'
+import { hasActiveRecording, shutdownRecorder } from './recorder/session'
 
 app.setAppUserModelId(APP_ID)
+
+// Recorder: system-audio capture features and the media:// scheme must be set before ready.
+enableCaptureFeatures()
+registerMediaScheme()
 
 /*
  * One agent per machine: a second copy could not bind the port anyway, so it
@@ -38,6 +46,11 @@ if (!app.requestSingleInstanceLock()) {
     applyContentSecurityPolicy()
     registerIpc()
     registerScanPackIpc()
+    // Recorder: sessions a crash left behind are marked before anything records.
+    markInterruptedSessions()
+    registerDisplayMediaHandler()
+    registerMediaProtocol()
+    registerRecorderIpc()
 
     const hidden = launchedHidden()
     if (hidden && process.platform === 'darwin') app.dock?.hide()
@@ -74,7 +87,15 @@ if (!app.requestSingleInstanceLock()) {
   // the agent lives in the tray, not in its window.
   app.on('window-all-closed', () => undefined)
 
-  app.on('before-quit', () => {
+  let recorderShutDown = false
+  app.on('before-quit', event => {
+    // A recording in progress: close its last segment cleanly first, then quit.
+    if (hasActiveRecording() && !recorderShutDown) {
+      event.preventDefault()
+      recorderShutDown = true
+      void shutdownRecorder().finally(() => app.quit())
+      return
+    }
     markQuitting()
     logger.info('Shutting down')
     stopPrinterMonitor()
@@ -102,7 +123,7 @@ function applyContentSecurityPolicy(): void {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           // worker-src: pdf.js (scanning and the label preview) runs in a worker.
-          `default-src 'self'; script-src ${scriptSrc}; worker-src 'self' blob:${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:${api ? ` ${api}` : ''} ${devServer ? `${devServer} ws:` : ''}; object-src 'none'; base-uri 'none'; form-action 'none'`
+          `default-src 'self'; script-src ${scriptSrc}; worker-src 'self' blob:${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: recording-media:; media-src 'self' blob: recording-media:; font-src 'self' data:; connect-src 'self' data: blob:${api ? ` ${api}` : ''} ${devServer ? `${devServer} ws:` : ''}; object-src 'none'; base-uri 'none'; form-action 'none'`
         ]
       }
     })

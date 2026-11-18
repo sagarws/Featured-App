@@ -98,6 +98,14 @@ export default tseslint.config(
   },
 
   {
+    files: ['electron/renderer/recorder/**/*.{ts,tsx}'],
+    rules: {
+      // Like Scan & Pack: the recorder screens load devices and data in effects.
+      'react-hooks/set-state-in-effect': 'off'
+    }
+  },
+
+  {
     files: [
       'electron/renderer/@core/**/*.{ts,tsx}',
       'electron/renderer/@layouts/**/*.{ts,tsx}',

@@ -30,6 +30,8 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 /** A name Windows, macOS and ZIP tools all accept as a file or folder. */
 const safeName = (text: string) =>
   text
+    // Control characters are not allowed in Windows file names.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_")
     .replace(/[. ]+$/, "")
     .trim()

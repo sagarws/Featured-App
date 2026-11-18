@@ -107,3 +107,15 @@ export const showWindow = (): void => {
   current.show()
   current.focus()
 }
+
+/**
+ * Loads the renderer at a hash route (`#toolbar`, `#engine`, …) in another
+ * window — the recorder's helper windows share the page and the preload.
+ */
+export const loadRendererRoute = (target: BrowserWindow, route: string): void => {
+  const entry = rendererEntry()
+  if ('url' in entry) void target.loadURL(`${entry.url}#${route}`)
+  else void target.loadFile(entry.file, { hash: route })
+}
+
+export const preloadPath = (): string => join(__dirname, '../preload/preload.js')
