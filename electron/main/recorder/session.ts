@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, BrowserWindow, type WebContents } from 'electron'
+import { app, BrowserWindow, Notification, type WebContents } from 'electron'
 import { RECORDER_IPC } from '@shared/constants/channels'
 import { RECORDER_TUNING } from '@shared/constants/recorder'
 import type { EngineConfig, RecorderStatus, SessionManifest, StartRecordingRequest } from '@shared/types/recorder'
@@ -18,7 +18,7 @@ import {
 import { logger } from '../logger'
 import { getSettings } from '../settings'
 import { getWindow, showWindow } from '../window'
-import { armDisplayRequest, ensureMediaAccess, listDisplays, screenPermission, systemAudioSupport } from './capture'
+import { armDisplayRequest, ensureMediaAccess, listDisplays, openPrivacySettings, screenPermission, systemAudioSupport } from './capture'
 import { findFfmpeg, type FfmpegPaths } from './ffmpeg'
 import { checkSegments, makeThumbnail, mergeSegments, removeSegments } from './finalize'
 import { readSegments, Segmenter } from './segmenter'
@@ -52,6 +52,9 @@ interface Active {
   pausedAt: number | null
   pausedTotal: number
   systemAudio: boolean
+  systemAudioSilent: boolean
+  /** Real sound came through system audio at least once. */
+  systemAudioHeard: boolean
   microphone: RecorderStatus['microphone']
   error: string | null
   timers: NodeJS.Timeout[]
@@ -104,6 +107,7 @@ export const getStatus = (): RecorderStatus => {
       segmentSeconds: null,
       audio: 'none',
       systemAudio: false,
+      systemAudioSilent: false,
       microphone: 'off',
       error: null,
       lastResult
@@ -122,6 +126,7 @@ export const getStatus = (): RecorderStatus => {
     segmentSeconds: active.manifest.segmentSeconds,
     audio: active.manifest.audio,
     systemAudio: active.systemAudio,
+    systemAudioSilent: active.systemAudioSilent,
     microphone: active.microphone,
     error: active.error,
     lastResult
@@ -267,6 +272,8 @@ export const startRecording = async (request: StartRecordingRequest): Promise<{ 
     pausedAt: null,
     pausedTotal: 0,
     systemAudio: false,
+    systemAudioSilent: false,
+    systemAudioHeard: false,
     microphone: 'off',
     error: null,
     timers: [],
@@ -386,6 +393,19 @@ export const engineStopped = (contents: WebContents): void => {
   if (active && isEngine(contents)) active.stopped?.()
 }
 
+export const SILENT_SYSTEM_AUDIO_HINT =
+  process.platform === 'darwin'
+    ? 'If sound was playing, macOS is blocking it: allow this app (or the terminal/IDE that started it) under System Settings → Privacy & Security → Screen & System Audio Recording, then restart it.'
+    : 'If sound was playing, check that the right output device is in use and that the app may capture audio.'
+
+/** The main window is minimised while recording, so say it where it will be seen too. */
+const notifySilentSystemAudio = (): void => {
+  if (!Notification.isSupported()) return
+  const note = new Notification({ title: 'No system sound is being recorded', body: 'Other people in a call will not be heard. Click to open the privacy settings.' })
+  note.on('click', () => void openPrivacySettings('audio').catch(() => undefined))
+  note.show()
+}
+
 export const engineEvent = (contents: WebContents, event: string): void => {
   if (!active || !isEngine(contents)) return
   if (event === 'mic-lost') {
@@ -393,6 +413,15 @@ export const engineEvent = (contents: WebContents, event: string): void => {
     logger.warn('[recorder] microphone disconnected; recording continues without it')
   } else if (event === 'mic-restored') {
     active.microphone = 'on'
+  } else if (event === 'system-silent') {
+    if (active.systemAudioSilent) return
+    active.systemAudioSilent = true
+    logger.warn('[recorder] system audio is digitally silent; the OS may be blocking it')
+    notifySilentSystemAudio()
+  } else if (event === 'system-audible') {
+    active.systemAudioHeard = true
+    if (!active.systemAudioSilent) return
+    active.systemAudioSilent = false
   } else if (event === 'video-ended') {
     active.error = 'The screen or camera stopped sending video (disconnected?). The recording was stopped and saved.'
     void stopRecording('video-ended')
@@ -474,19 +503,20 @@ export const stopRecording = (reason = 'user', opts: { merge?: boolean } = {}): 
     a.manifest.segments = readSegments(a.dir, false)
     persist(a)
     active = null
+    const warning = a.systemAudio && !a.systemAudioHeard && recorded * 1000 >= RECORDER_TUNING.systemSilenceWarnMs ? `System audio was silent for the whole recording. ${SILENT_SYSTEM_AUDIO_HINT}` : null
 
     const shouldMerge = opts.merge ?? getSettings().recorder.autoMerge
     if (!shouldMerge) {
-      lastResult = { sessionId: a.manifest.id, file: null, error: a.error }
+      lastResult = { sessionId: a.manifest.id, file: null, error: a.error, warning }
       broadcastStatus()
       broadcastLibraryChanged()
       return
     }
     try {
       const { file } = await finalizeSession(a.dir, a.manifest)
-      lastResult = { sessionId: a.manifest.id, file, error: a.error }
+      lastResult = { sessionId: a.manifest.id, file, error: a.error, warning }
     } catch (error) {
-      lastResult = { sessionId: a.manifest.id, file: null, error: error instanceof Error ? error.message : String(error) }
+      lastResult = { sessionId: a.manifest.id, file: null, error: error instanceof Error ? error.message : String(error), warning }
     }
     broadcastStatus()
     broadcastLibraryChanged()

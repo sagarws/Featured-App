@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { MicOffOutlined, MicOutlined, PauseRounded, PlayArrowRounded, StopRounded, VolumeOffOutlined, VolumeUpOutlined } from '@mui/icons-material'
+import { MicOffOutlined, MicOutlined, PauseRounded, PlayArrowRounded, StopRounded, VolumeOffOutlined, VolumeUpOutlined, WarningAmberRounded } from '@mui/icons-material'
 import { formatDuration } from '@shared/utils/recorder'
 import { useRecorderStatus } from '../hooks'
 
@@ -51,15 +51,45 @@ const RecordingToolbar = () => {
         <Typography sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, fontSize: 15 }}>{formatDuration(status?.elapsed ?? 0)}</Typography>
       </Stack>
 
-      <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', minWidth: 120 }} noWrap>
-        {segmentLabel}
-      </Typography>
-
-      <Tooltip title={status?.systemAudio ? 'System audio: on' : 'System audio: off'}>
-        <Box sx={{ display: 'flex', color: status?.systemAudio ? '#56CA00' : 'rgba(255,255,255,0.4)' }}>
-          {status?.systemAudio ? <VolumeUpOutlined fontSize='small' /> : <VolumeOffOutlined fontSize='small' />}
+      {status?.systemAudioSilent ? (
+        // The toolbar is short, so the warning itself is the button (a tooltip would be clipped).
+        <Box
+          component='button'
+          style={noDrag}
+          onClick={() => void recorder.openPrivacy('audio')}
+          title='System audio is silent. If sound is playing, the OS is blocking it. Click to open the privacy settings.'
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            px: 1,
+            py: 0.5,
+            border: 0,
+            borderRadius: '8px',
+            cursor: 'pointer',
+            bgcolor: 'rgba(255,180,0,0.18)',
+            color: '#FFB400',
+            font: 'inherit',
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <WarningAmberRounded sx={{ fontSize: 16 }} />
+          No system sound · Fix
         </Box>
-      </Tooltip>
+      ) : (
+        <>
+          <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', minWidth: 120 }} noWrap>
+            {segmentLabel}
+          </Typography>
+          <Tooltip title={status?.systemAudio ? 'System audio: on' : 'System audio: off'}>
+            <Box sx={{ display: 'flex', color: status?.systemAudio ? '#56CA00' : 'rgba(255,255,255,0.4)' }}>
+              {status?.systemAudio ? <VolumeUpOutlined fontSize='small' /> : <VolumeOffOutlined fontSize='small' />}
+            </Box>
+          </Tooltip>
+        </>
+      )}
       <Tooltip title={status?.microphone === 'on' ? 'Microphone: on' : status?.microphone === 'lost' ? 'Microphone disconnected' : 'Microphone: off'}>
         <Box sx={{ display: 'flex', color: status?.microphone === 'on' ? '#56CA00' : status?.microphone === 'lost' ? '#FFB400' : 'rgba(255,255,255,0.4)' }}>
           {status?.microphone === 'off' ? <MicOffOutlined fontSize='small' /> : <MicOutlined fontSize='small' />}

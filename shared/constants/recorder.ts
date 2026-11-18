@@ -57,6 +57,8 @@ export const RECORDER_TUNING = {
   minFreeBytesWhileRecording: 500 * 1024 ** 2,
   /** How long Stop waits for the capture window's last chunk. */
   stopTimeoutMs: 8000,
+  /** Warn when system audio has stayed digitally silent this long (macOS permission off, usually). */
+  systemSilenceWarnMs: 6000,
   /** "Segment length" when segmentation is off: effectively one file. */
   unsegmentedSeconds: 1_000_000,
   /** A merged file shorter than this share of the segments' total is rejected. */

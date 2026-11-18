@@ -171,7 +171,7 @@ const api = {
       failed: (message: string): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.engineFailed, message),
       chunk: (bytes: Uint8Array): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.engineChunk, bytes),
       stopped: (): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.engineStopped),
-      event: (name: 'mic-lost' | 'mic-restored' | 'video-ended'): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.engineEvent, name),
+      event: (name: 'mic-lost' | 'mic-restored' | 'video-ended' | 'system-silent' | 'system-audible'): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.engineEvent, name),
       onCommand: (listener: (command: 'pause' | 'resume' | 'stop') => void): (() => void) => on(RECORDER_IPC.engineCommand, listener)
     },
 

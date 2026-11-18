@@ -43,8 +43,14 @@ const ActiveRecordingBanner = ({ status }: { status: RecorderStatus }) => {
           <span>{status.kind ? KIND_LABEL[status.kind] : ''}</span>
           <span>{status.segmentSeconds ? `Segment ${status.segment} · ${formatDuration(status.segmentElapsed)}` : 'Single file'}</span>
           <Stack direction='row' spacing={0.5} alignItems='center'>
-            {status.systemAudio ? <VolumeUpOutlined fontSize='small' color='success' /> : <VolumeOffOutlined fontSize='small' />}
-            <span>System audio {status.systemAudio ? 'on' : 'off'}</span>
+            {status.systemAudioSilent ? (
+              <VolumeOffOutlined fontSize='small' color='warning' />
+            ) : status.systemAudio ? (
+              <VolumeUpOutlined fontSize='small' color='success' />
+            ) : (
+              <VolumeOffOutlined fontSize='small' />
+            )}
+            <span>System audio {status.systemAudioSilent ? 'silent' : status.systemAudio ? 'on' : 'off'}</span>
           </Stack>
           <Stack direction='row' spacing={0.5} alignItems='center'>
             {status.microphone === 'off' ? <MicOffOutlined fontSize='small' /> : <MicOutlined fontSize='small' color={status.microphone === 'lost' ? 'warning' : 'success'} />}
@@ -67,6 +73,21 @@ const ActiveRecordingBanner = ({ status }: { status: RecorderStatus }) => {
           </Button>
         </Stack>
       </Stack>
+      {status.systemAudioSilent && (
+        <Alert
+          severity='warning'
+          sx={{ mt: 2 }}
+          action={
+            <Button color='inherit' size='small' onClick={() => void recorder.openPrivacy('audio')}>
+              Open settings
+            </Button>
+          }
+        >
+          No sound is coming through system audio, so other people in a call or video are not being recorded. If something is playing,
+          the operating system is blocking it. On a Mac, allow this app (or the terminal/IDE that started it) under Privacy &amp; Security →
+          Screen &amp; System Audio Recording, then restart it. Your microphone is still recorded.
+        </Alert>
+      )}
       {status.error && (
         <Alert severity='warning' sx={{ mt: 2 }}>
           {status.error}

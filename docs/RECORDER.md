@@ -92,6 +92,15 @@ effect. Packaged builds carry the usage strings (`electron-builder.yml`) and the
 audio-input/camera entitlements (`build/entitlements.mac.plist`). Without the
 permission, macOS returns the desktop wallpaper only, or silent system audio.
 
+**Silent system audio.** A refused system-audio permission does not fail: the
+track arrives but every sample is zero. The capture window watches for that.
+If nothing but zeros comes for 6 s, the toolbar shows **No system sound · Fix**
+(opens the privacy pane), the app shows a warning, and a system notification
+appears. Real sound clears it. A recording that stayed silent throughout says so
+when saved. **In development**, macOS asks on behalf of the app that started
+`npm run dev` (Terminal, iTerm, VS Code, Antigravity…). That app needs
+*System Audio Recording*, and it must be restarted after the change.
+
 ## ffmpeg
 
 Needed for segmenting, merging, repair and thumbnails. Lookup order:
@@ -136,7 +145,7 @@ Development switches (ignored in packaged builds):
 | 14 | Corrupt segment | With "Keep segment files" on, overwrite one segment with junk → Recover → it is skipped and reported |
 | 15 | Low disk | Choose a recording folder on a nearly full volume: refuses to start below 2 GB, stops and saves below 500 MB |
 | 16 | Mic unplugged | Unplug a USB mic while recording → the toolbar shows it disconnected, recording continues; plug back in → restored |
-| 17 | System-audio permission denied | Deny it in Privacy settings → the start fails with a clear message and an *Open settings* button |
+| 17 | System-audio permission denied | Remove the app from *System Audio Recording* and play sound → after ~6 s the toolbar shows *No system sound · Fix*, plus a notification; the saved recording warns too |
 
 ## Known limitations
 

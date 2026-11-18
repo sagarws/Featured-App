@@ -1,4 +1,4 @@
-import { RESOLUTION_SIZE } from '@shared/constants/recorder'
+import { RECORDER_TUNING, RESOLUTION_SIZE } from '@shared/constants/recorder'
 import type { EngineConfig } from '@shared/types/recorder'
 import { candidateMimeTypes, wantsMic, wantsSystemAudio } from '@shared/utils/recorder'
 import { cropVideoTrack } from './crop'
@@ -29,6 +29,37 @@ const openMic = (deviceId: string | null): Promise<MediaStream> =>
     audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     video: false
   })
+
+/**
+ * When the OS refuses system audio (macOS without the "System Audio Recording"
+ * permission) the track still arrives, but every sample is exactly zero. Any
+ * real sound is not. Reports 'system-silent' if nothing but zeros came for a
+ * while, and 'system-audible' as soon as sound appears; then it stops watching,
+ * because sound proves the capture works and a quiet pause later is normal.
+ */
+const watchSystemSilence = (ctx: AudioContext, source: AudioNode): (() => void) => {
+  const analyser = ctx.createAnalyser()
+  analyser.fftSize = 2048
+  source.connect(analyser)
+  const samples = new Float32Array(analyser.fftSize)
+  const started = performance.now()
+  let warned = false
+  const timer = window.setInterval(() => {
+    analyser.getFloatTimeDomainData(samples)
+    if (samples.some(v => v !== 0)) {
+      void api().engine.event('system-audible')
+      stop()
+    } else if (!warned && performance.now() - started >= RECORDER_TUNING.systemSilenceWarnMs) {
+      warned = true
+      void api().engine.event('system-silent')
+    }
+  }, 200)
+  const stop = () => {
+    window.clearInterval(timer)
+    source.disconnect(analyser)
+  }
+  return stop
+}
 
 const pickMimeType = (cfg: EngineConfig): string => {
   const type = candidateMimeTypes(cfg.kind).find(t => MediaRecorder.isTypeSupported(t))
@@ -125,7 +156,11 @@ export const runEngine = async (): Promise<void> => {
       await audioContext.resume()
       const ctx = audioContext
       const destination = ctx.createMediaStreamDestination()
-      if (system) ctx.createMediaStreamSource(new MediaStream([system])).connect(destination)
+      if (system) {
+        const source = ctx.createMediaStreamSource(new MediaStream([system]))
+        source.connect(destination)
+        stopFns.push(watchSystemSilence(ctx, source))
+      }
       if (wantMicrophone) {
         micGain = ctx.createGain()
         micGain.gain.value = cfg.micVolume / 100

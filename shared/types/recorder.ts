@@ -151,10 +151,12 @@ export interface RecorderStatus {
   segmentSeconds: number | null
   audio: AudioSource
   systemAudio: boolean
+  /** System audio is captured but has carried no sound at all since the start. */
+  systemAudioSilent: boolean
   microphone: 'on' | 'off' | 'lost'
   error: string | null
   /** Set when the last stop finished: the merged file or the session folder. */
-  lastResult: { sessionId: string; file: string | null; error: string | null } | null
+  lastResult: { sessionId: string; file: string | null; error: string | null; warning: string | null } | null
 }
 
 /** What the hidden capture window needs to start. */

@@ -48,6 +48,7 @@ const RecorderPage = () => {
     if (last.error && !last.file) toast.error(last.error, { id: last.sessionId, duration: 8000 })
     else if (last.file) toast.success(last.error ? `Saved. ${last.error}` : 'Recording saved.', { id: last.sessionId, duration: 6000 })
     else toast.success('Recording stopped. Its segments are in the library.', { id: last.sessionId })
+    if (last.warning) toast(last.warning, { id: `${last.sessionId}-warning`, icon: '⚠️', duration: 15_000 })
   }, [last])
 
   const start = async (choice: StartChoice) => {
