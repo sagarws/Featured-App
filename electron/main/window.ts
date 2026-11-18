@@ -28,7 +28,10 @@ export const isRendererUrl = (url: string): boolean => {
 }
 
 export const createWindow = (options: { show: boolean }): BrowserWindow => {
+  // Packaged builds carry the icon in the app bundle / exe (from build/icon.png).
+  // A dev run is the stock Electron binary, so give its window and Dock the app icon.
   const icon = app.isPackaged ? undefined : join(app.getAppPath(), 'build', 'icon.png')
+  if (icon && process.platform === 'darwin') app.dock?.setIcon(icon)
 
   window = new BrowserWindow({
     width: WINDOW_DEFAULTS.width,
