@@ -2,8 +2,6 @@ import { app } from 'electron'
 import { ALLOWED_ORIGINS } from '@shared/constants/agent'
 import type { AgentPrinter, AgentState, PrintJob, ServerStatus } from '@shared/types/agent'
 import { logger } from './logger'
-import { getLastCleanup } from './scanpack/retention'
-import { storageRoot } from './scanpack/store'
 import { getSettings } from './settings'
 
 /**
@@ -37,13 +35,6 @@ export const snapshot = (): AgentState => {
     ...(printersError ? { printersError } : {}),
     printersCheckedAt,
     packaged: app.isPackaged,
-    scanPack: {
-      dir: storageRoot(),
-      isDefaultDir: getSettings().scanPackDir === null,
-      weeksKept: getSettings().scanPackWeeksKept,
-      lastCleanup: getLastCleanup(),
-      workers: getSettings().scanPackWorkers
-    },
     openAtLogin: getSettings().openAtLogin,
     themeMode: getSettings().themeMode,
     blockOfflinePrinters: getSettings().blockOfflinePrinters,

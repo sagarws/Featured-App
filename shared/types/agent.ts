@@ -1,4 +1,3 @@
-import type { ScanPackSettingsState } from './scanpack'
 
 /**
  * What a printer is doing, as one word. Worked out from the OS queue (paused?
@@ -149,8 +148,6 @@ export interface AgentState {
   printersCheckedAt: string | null
   /** False in an `npm run dev` run: start-at-login is only offered when installed. */
   packaged: boolean
-  /** Scan & Pack storage: folder in use, weeks kept, last cleanup. */
-  scanPack: ScanPackSettingsState
   openAtLogin: boolean
   themeMode: ThemeMode
   /** Refuse jobs for a printer that is offline / paused instead of queueing them. */

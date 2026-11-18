@@ -5,7 +5,6 @@ import type { ThemeMode } from '@shared/types/agent'
 import type { RecorderSettings } from '@shared/types/recorder'
 import { sanitiseRecorderSettings } from '@shared/utils/recorder'
 import { normaliseOrigin } from '@shared/utils/origin'
-import { clampWeeks, clampWorkers, DEFAULT_EXTRACT_WORKERS, DEFAULT_WEEKS_KEPT } from '@shared/utils/weekFolder'
 import { readDurableJson, writeDurableJson } from './durableJson'
 import { logger } from './logger'
 
@@ -22,12 +21,6 @@ export interface AgentSettings {
   blockOfflinePrinters: boolean
   /** Desktop notifications when a printer needs attention or a job fails. */
   notifications: boolean
-  /** Where Scan & Pack writes its PDFs. null = the OS Downloads folder. */
-  scanPackDir: string | null
-  /** Weeks of Scan & Pack data kept: this week plus N-1 before it. */
-  scanPackWeeksKept: number
-  /** Utility processes cutting per-order PDFs in parallel after an upload. */
-  scanPackWorkers: number
   /** Screen / webcam / audio recording. */
   recorder: RecorderSettings
 }
@@ -44,9 +37,6 @@ const defaults = (): AgentSettings => ({
   themeMode: 'system',
   blockOfflinePrinters: true,
   notifications: true,
-  scanPackDir: null,
-  scanPackWeeksKept: DEFAULT_WEEKS_KEPT,
-  scanPackWorkers: DEFAULT_EXTRACT_WORKERS,
   recorder: sanitiseRecorderSettings(null)
 })
 
@@ -73,11 +63,6 @@ const sanitise = (raw: unknown): AgentSettings => {
     blockOfflinePrinters:
       typeof value.blockOfflinePrinters === 'boolean' ? value.blockOfflinePrinters : base.blockOfflinePrinters,
     notifications: typeof value.notifications === 'boolean' ? value.notifications : base.notifications,
-    scanPackDir: typeof value.scanPackDir === 'string' && value.scanPackDir.trim() ? value.scanPackDir : null,
-    scanPackWeeksKept:
-      typeof value.scanPackWeeksKept === 'number' ? clampWeeks(value.scanPackWeeksKept) : base.scanPackWeeksKept,
-    scanPackWorkers:
-      typeof value.scanPackWorkers === 'number' ? clampWorkers(value.scanPackWorkers) : base.scanPackWorkers,
     recorder: sanitiseRecorderSettings(value.recorder)
   }
 }

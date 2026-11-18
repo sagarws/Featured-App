@@ -16,14 +16,7 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       minify: 'esbuild',
-      // Two entries: the app, and the Scan & Pack PDF extractor that runs in
-      // its own utility processes (electron/main/scanpack/extractWorker.ts).
-      lib: {
-        entry: {
-          main: resolve(__dirname, 'electron/main/main.ts'),
-          extractWorker: resolve(__dirname, 'electron/main/scanpack/extractWorker.ts')
-        }
-      },
+      lib: { entry: { main: resolve(__dirname, 'electron/main/main.ts') } },
       rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].js' } }
     }
   },

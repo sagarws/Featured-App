@@ -3,7 +3,6 @@ import { Alert, Box, ButtonBase, Stack, Switch, Typography } from '@mui/material
 import type { AgentState, Result, ThemeMode } from '@shared/types/agent'
 import { useSettings } from '@core/hooks/useSettings'
 import SectionCard from '../components/SectionCard'
-import ScanPackStorageCard from '../components/ScanPackStorageCard'
 import { platformLabel } from '../utils/format'
 
 const MODES: { id: ThemeMode; label: string; hint: string; icon: string }[] = [
@@ -140,8 +139,6 @@ const SettingsPage = ({ state }: { state: AgentState }) => {
         </Row>
       </SectionCard>
       {error && <Alert severity='error'>{error}</Alert>}
-
-      <ScanPackStorageCard scanPack={state.scanPack} />
 
       <SectionCard icon='tabler-info-circle' tone='primary' title='About'>
         <Stack spacing={1.5}>

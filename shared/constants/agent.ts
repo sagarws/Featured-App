@@ -21,7 +21,7 @@ export const API_PATHS = {
 } as const
 
 /**
- * A "both" job for a big packlog is a label + invoice PDF of a few MB, and
+ * A "both" job for a big batch of orders is a label + invoice PDF of a few MB, and
  * base64 inflates that by a third. 40 MB of JSON is far beyond any real job and
  * still small enough that a runaway request cannot exhaust memory.
  */
