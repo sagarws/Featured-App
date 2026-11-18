@@ -158,3 +158,5 @@ release/
 
 # Recorder: ffmpeg binaries fetched/built by scripts/fetch-ffmpeg.cjs
 resources/ffmpeg/
+# Recorder: macOS helpers compiled by scripts/build-native-mac.cjs
+resources/native/

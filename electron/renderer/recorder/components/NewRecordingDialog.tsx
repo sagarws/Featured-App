@@ -22,7 +22,7 @@ import {
 import { CropFreeOutlined, DesktopWindowsOutlined, FiberManualRecord, MicOutlined } from '@mui/icons-material'
 import type { AudioSource, DisplayInfo, RecorderSettings, RecordingKind, StorageInfo } from '@shared/types/recorder'
 import { wantsMic, wantsSystemAudio } from '@shared/utils/recorder'
-import { useMediaDevices, useMicLevel } from '../hooks'
+import { systemAudioAllowed, useMediaDevices, useMicLevel, useSystemAudioPermission } from '../hooks'
 import AudioLevelMeter from './AudioLevelMeter'
 
 const TITLES: Record<RecordingKind, string> = { screen: 'Record Screen', webcam: 'Record Webcam', audio: 'Record Audio' }
@@ -82,6 +82,28 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
   const [camId, setCamId] = useState<string | null>(settings.cameraDeviceId)
   const [overlay, setOverlay] = useState(settings.webcamOverlay)
   const [volume, setVolume] = useState(settings.micVolume)
+  const { permission, request } = useSystemAudioPermission()
+  const [asking, setAsking] = useState(false)
+  // Unsupported OS, or the permission is not granted: the System options are disabled.
+  const systemLocked = storage?.systemAudio.supported === false || !systemAudioAllowed(permission)
+  const firstUnlocked = (): AudioSource => AUDIO_OPTIONS[k].find(o => !wantsSystemAudio(o.id))?.id ?? 'none'
+
+  // Never leave a disabled option selected.
+  useEffect(() => {
+    if (open && permission !== null && systemLocked && wantsSystemAudio(audio)) setAudio(firstUnlocked())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, permission, systemLocked, audio])
+
+  const allowSystemAudio = async () => {
+    if (permission === 'denied') return void window.printAgent.recorder.openPrivacy('audio')
+    setAsking(true)
+    try {
+      const next = await request()
+      if (next === 'granted') setAudio(k === 'audio' ? 'system+mic' : 'system')
+    } finally {
+      setAsking(false)
+    }
+  }
 
   // Reset to the saved defaults each time the dialog opens.
   useEffect(() => {
@@ -125,7 +147,8 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
     }
   }, [open, k, camId])
 
-  const systemUnsupported = wantsSystemAudio(audio) && storage && !storage.systemAudio.supported
+  const systemUnsupported = storage?.systemAudio.supported === false
+  const hasSystemOptions = AUDIO_OPTIONS[k].some(o => wantsSystemAudio(o.id))
   const start = () =>
     onStart({ kind: k, audio, areaMode, displayId, micDeviceId: micId, cameraDeviceId: camId, webcamOverlay: k === 'screen' && overlay })
 
@@ -194,18 +217,23 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
               Audio
             </Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1 }}>
-              {AUDIO_OPTIONS[k].map(o => (
+              {AUDIO_OPTIONS[k].map(o => {
+                const disabled = systemLocked && wantsSystemAudio(o.id)
+                const choose = () => !disabled && setAudio(o.id)
+                return (
                 <Box
                   key={o.id}
                   role='radio'
                   aria-checked={audio === o.id}
-                  tabIndex={0}
-                  onClick={() => setAudio(o.id)}
-                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setAudio(o.id)}
+                  aria-disabled={disabled}
+                  tabIndex={disabled ? -1 : 0}
+                  onClick={choose}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && choose()}
                   sx={{
                     p: 1.5,
                     borderRadius: 2,
-                    cursor: 'pointer',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.45 : 1,
                     border: '1.5px solid',
                     borderColor: audio === o.id ? 'primary.main' : 'divider',
                     bgcolor: audio === o.id ? 'var(--mui-palette-primary-lighterOpacity)' : 'transparent'
@@ -216,14 +244,30 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
                     {o.id === 'system' && k !== 'webcam' ? ' (default)' : ''}
                   </Typography>
                   <Typography variant='caption' color='text.secondary'>
-                    {o.hint}
+                    {disabled ? (systemUnsupported ? 'Not available on this computer' : 'Needs system audio permission') : o.hint}
                   </Typography>
                 </Box>
-              ))}
+                )
+              })}
             </Box>
-            {systemUnsupported && (
+            {hasSystemOptions && systemUnsupported && (
               <Alert severity='warning' sx={{ mt: 1.5 }}>
                 {storage?.systemAudio.reason}
+              </Alert>
+            )}
+            {hasSystemOptions && !systemUnsupported && permission !== null && !systemAudioAllowed(permission) && (
+              <Alert
+                severity='info'
+                sx={{ mt: 1.5 }}
+                action={
+                  <Button color='inherit' size='small' disabled={asking} onClick={() => void allowSystemAudio()}>
+                    {permission === 'denied' ? 'Open settings' : asking ? 'Waiting…' : 'Allow'}
+                  </Button>
+                }
+              >
+                {permission === 'denied'
+                  ? 'System audio is turned off for this app. Switch it on under Screen & System Audio Recording → System Audio Recording Only, then come back.'
+                  : 'Allow system audio to record other people in calls, videos and apps.'}
               </Alert>
             )}
             {wantsSystemAudio(audio) && storage?.platform === 'linux' && storage.systemAudio.reason && (
@@ -311,7 +355,7 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
           variant='contained'
           color='error'
           startIcon={<FiberManualRecord />}
-          disabled={busy || !!systemUnsupported || (storage !== null && !storage.ffmpeg.found)}
+          disabled={busy || (wantsSystemAudio(audio) && systemLocked) || (storage !== null && !storage.ffmpeg.found)}
           onClick={start}
         >
           {busy ? 'Starting…' : k === 'screen' && areaMode === 'region' ? 'Select region' : 'Start recording'}

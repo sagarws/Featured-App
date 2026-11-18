@@ -92,6 +92,18 @@ effect. Packaged builds carry the usage strings (`electron-builder.yml`) and the
 audio-input/camera entitlements (`build/entitlements.mac.plist`). Without the
 permission, macOS returns the desktop wallpaper only, or silent system audio.
 
+**System Audio Recording permission.** macOS has no public API for it, so
+`native/mac/audio-permission.c` (compiled by `scripts/build-native-mac.cjs`,
+shipped as `<resources>/native/audio-permission`) checks and requests it
+through the TCC framework. On launch, if it is not granted, the app shows an
+*Allow system audio* popup (with *Don't ask when the app starts*). Until it is
+granted, **System audio** and **System + Microphone** are disabled in the new
+recording dialog, which offers *Allow* / *Open settings*. The main process also
+refuses to start a system-audio recording without it. Turning it on in System
+Settings is picked up when the app window regains focus. `npm run dev` builds
+the helper automatically (`predev`); if it cannot be checked, the options stay
+enabled and the silence warning below still applies.
+
 **Silent system audio.** A refused system-audio permission does not fail: the
 track arrives but every sample is zero. The capture window watches for that.
 If nothing but zeros comes for 6 s, the toolbar shows **No system sound · Fix**

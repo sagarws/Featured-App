@@ -60,7 +60,8 @@ export const sanitiseRecorderSettings = (raw: unknown): RecorderSettings => {
     recoverInterrupted: bool(v.recoverInterrupted, d.recoverInterrupted),
     webcamOverlay: bool(v.webcamOverlay, d.webcamOverlay),
     overlayCorner: pick(CORNERS, v.overlayCorner, d.overlayCorner),
-    overlaySize: pick(SIZES, v.overlaySize, d.overlaySize)
+    overlaySize: pick(SIZES, v.overlaySize, d.overlaySize),
+    askSystemAudioOnLaunch: bool(v.askSystemAudioOnLaunch, d.askSystemAudioOnLaunch)
   }
 }
 

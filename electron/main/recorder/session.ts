@@ -19,6 +19,7 @@ import { logger } from '../logger'
 import { getSettings } from '../settings'
 import { getWindow, showWindow } from '../window'
 import { armDisplayRequest, ensureMediaAccess, listDisplays, openPrivacySettings, screenPermission, systemAudioSupport } from './capture'
+import { systemAudioAllowed, systemAudioPermission } from './audioPermission'
 import { findFfmpeg, type FfmpegPaths } from './ffmpeg'
 import { checkSegments, makeThumbnail, mergeSegments, removeSegments } from './finalize'
 import { readSegments, Segmenter } from './segmenter'
@@ -187,6 +188,9 @@ export const startRecording = async (request: StartRecordingRequest): Promise<{ 
   if (wantsSystemAudio(audio)) {
     const support = systemAudioSupport()
     if (!support.supported) throw new Error(support.reason ?? 'System audio is not supported on this computer.')
+    if (!systemAudioAllowed(await systemAudioPermission())) {
+      throw new Error('System audio permission is off for this app. Allow it in System Settings → Privacy & Security → Screen & System Audio Recording, or choose Microphone / No audio.')
+    }
   }
   if ((wantsMic(audio) || (kind === 'webcam' && audio !== 'none')) && !(await ensureMediaAccess('microphone'))) {
     throw new Error('Microphone access is off for this app. Turn it on in your privacy settings.')

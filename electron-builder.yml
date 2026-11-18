@@ -37,6 +37,11 @@ nsis:
   shortcutName: TrackVid Print Agent
 mac:
   category: public.app-category.business
+  # Recorder: checks/asks for the "System Audio Recording" permission
+  # (scripts/build-native-mac.cjs). Found at <resources>/native.
+  extraResources:
+    - from: resources/native/mac
+      to: native
   target:
     - target: dmg
       arch:

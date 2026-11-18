@@ -13,6 +13,7 @@ import SkuMappingPage from './scanpack/pages/SkuMappingPage'
 import LabelSortingPage from './scanpack/pages/LabelSortingPage'
 import PacklogJobsDock from './scanpack/background/PacklogJobsDock'
 import RecorderPage from './recorder/RecorderPage'
+import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
   const [page, setPage] = useState<Page>('home')
@@ -64,6 +65,8 @@ const App = ({ state }: { state: AgentState }) => {
       <Toaster position='top-right' />
       {/* Packlogs created and labels downloaded in the background, on every page. */}
       <PacklogJobsDock onOpenPacklog={openPacklog} />
+      {/* macOS: ask for the system-audio permission the recorder needs. */}
+      <SystemAudioPermissionDialog />
     </Box>
   )
 }

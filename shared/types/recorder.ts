@@ -45,6 +45,8 @@ export interface RecorderSettings {
   webcamOverlay: boolean
   overlayCorner: OverlayCorner
   overlaySize: OverlaySize
+  /** Offer the system-audio permission popup when the app starts. */
+  askSystemAudioOnLaunch: boolean
 }
 
 /** What to capture: one display, or a rectangle on one (DIP, relative to the display's top-left). */
@@ -177,6 +179,13 @@ export interface EngineConfig {
   keyframeIntervalMs: number
   timesliceMs: number
 }
+
+/**
+ * The OS permission to record system audio. macOS 14.2+ asks for it ("System
+ * Audio Recording"); Windows and Linux have none ('granted'). 'unknown' means
+ * it could not be checked, so the app does not block on it.
+ */
+export type SystemAudioPermission = 'granted' | 'denied' | 'not-determined' | 'unsupported' | 'unknown'
 
 export interface StorageInfo {
   dir: string

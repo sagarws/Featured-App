@@ -21,7 +21,8 @@ import type {
   RecordingSummary,
   RecoveryResult,
   StartRecordingRequest,
-  StorageInfo
+  StorageInfo,
+  SystemAudioPermission
 } from '@shared/types/recorder'
 
 /** Subscribe to a push channel; returns the unsubscribe. */
@@ -161,6 +162,9 @@ const api = {
     listInterrupted: (): Promise<Result<RecordingSummary[]>> => ipcRenderer.invoke(RECORDER_IPC.listInterrupted),
     recover: (id: string): Promise<Result<RecoveryResult>> => ipcRenderer.invoke(RECORDER_IPC.recover, id),
     openPrivacy: (pane: 'screen' | 'microphone' | 'camera' | 'audio'): Promise<Result> => ipcRenderer.invoke(RECORDER_IPC.openPrivacy, pane),
+    /** macOS "System Audio Recording": check, or ask (shows the system prompt once). */
+    systemAudioPermission: (): Promise<Result<SystemAudioPermission>> => ipcRenderer.invoke(RECORDER_IPC.systemAudioPermission),
+    requestSystemAudioPermission: (): Promise<Result<SystemAudioPermission>> => ipcRenderer.invoke(RECORDER_IPC.requestSystemAudioPermission),
     cameraDevice: (): Promise<Result<string | null>> => ipcRenderer.invoke(RECORDER_IPC.cameraDevice),
 
     /** The hidden capture window only. */

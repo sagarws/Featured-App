@@ -84,6 +84,8 @@ export const RECORDER_IPC = {
   listInterrupted: 'recorder:list-interrupted',
   recover: 'recorder:recover',
   openPrivacy: 'recorder:open-privacy',
+  systemAudioPermission: 'recorder:system-audio-permission',
+  requestSystemAudioPermission: 'recorder:request-system-audio-permission',
   /** Push: RecorderStatus, every second while recording and on every change. */
   status: 'recorder:status',
   /** Push: the library changed on disk. */

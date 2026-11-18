@@ -11,7 +11,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "predev": "node scripts/build-native-mac.cjs",
     "dev": "electron-vite dev",
+    "native": "node scripts/build-native-mac.cjs --force",
     "start": "electron-vite preview",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
@@ -23,8 +25,8 @@
     "build": "npm run verify && electron-vite build",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "node scripts/fetch-ffmpeg.cjs win-x64 && npm run build && electron-builder --win --x64",
-    "build:mac": "node scripts/fetch-ffmpeg.cjs mac-arm64 && node scripts/fetch-ffmpeg.cjs mac-x64 && npm run build && electron-builder --mac",
-    "build:mac:local": "node scripts/fetch-ffmpeg.cjs mac-arm64 && npm run build && electron-builder --mac dmg --arm64 -c.mac.identity=- -c.mac.hardenedRuntime=false",
+    "build:mac": "node scripts/build-native-mac.cjs --force && node scripts/fetch-ffmpeg.cjs mac-arm64 && node scripts/fetch-ffmpeg.cjs mac-x64 && npm run build && electron-builder --mac",
+    "build:mac:local": "node scripts/build-native-mac.cjs --force && node scripts/fetch-ffmpeg.cjs mac-arm64 && npm run build && electron-builder --mac dmg --arm64 -c.mac.identity=- -c.mac.hardenedRuntime=false",
     "icons": "node scripts/build-icon-subset.cjs",
     "ffmpeg": "node scripts/fetch-ffmpeg.cjs",
     "build:linux": "node scripts/fetch-ffmpeg.cjs linux-x64 && npm run build && electron-builder --linux AppImage --x64"

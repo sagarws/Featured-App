@@ -39,7 +39,8 @@ export const RECORDER_DEFAULTS: RecorderSettings = {
   recoverInterrupted: true,
   webcamOverlay: false,
   overlayCorner: 'bottom-right',
-  overlaySize: 'medium'
+  overlaySize: 'medium',
+  askSystemAudioOnLaunch: true
 }
 
 export const RECORDER_TUNING = {

@@ -1,12 +1,13 @@
 import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { RECORDER_IPC } from '@shared/constants/channels'
 import type { Result } from '@shared/types/agent'
-import type { CaptureArea, RecorderSettings, StartRecordingRequest, StorageInfo } from '@shared/types/recorder'
+import type { CaptureArea, RecorderSettings, StartRecordingRequest, StorageInfo, SystemAudioPermission } from '@shared/types/recorder'
 import { isAudioSource, sanitiseRecorderSettings } from '@shared/utils/recorder'
 import { logger } from '../logger'
 import { getSettings, updateSettings } from '../settings'
 import { getWindow, isRendererUrl, showWindow } from '../window'
 import { listDisplays, openPrivacySettings, screenPermission, systemAudioSupport } from './capture'
+import { requestSystemAudioPermission, systemAudioPermission } from './audioPermission'
 import { ffmpegVersion } from './ffmpeg'
 import { deleteRecording, exportRecording, listInterrupted, listRecordings, mergeRecording, openRecordingLocation, recoverRecording, renameRecording } from './library'
 import {
@@ -175,6 +176,8 @@ export const registerRecorderIpc = (): void => {
     if (!isId(id)) throw new Error('Unknown recording.')
     return recoverRecording(id)
   })
+  handle(RECORDER_IPC.systemAudioPermission, (): Promise<SystemAudioPermission> => systemAudioPermission())
+  handle(RECORDER_IPC.requestSystemAudioPermission, (): Promise<SystemAudioPermission> => requestSystemAudioPermission())
   handle(RECORDER_IPC.openPrivacy, async (_e, pane: unknown) => {
     if (typeof pane !== 'string') throw new Error('Unknown settings page.')
     await openPrivacySettings(pane)

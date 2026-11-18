@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { RecorderSettings, RecorderStatus } from '@shared/types/recorder'
+import type { RecorderSettings, RecorderStatus, SystemAudioPermission } from '@shared/types/recorder'
 
 const recorder = () => window.printAgent.recorder
 
@@ -151,3 +151,37 @@ export const useMicLevel = (enabled: boolean, deviceId: string | null, volume: n
 
   return { level, error }
 }
+
+/**
+ * The OS permission to record system audio (macOS), null while checking.
+ * Checked again whenever the window regains focus, so turning it on in System
+ * Settings and coming back is picked up without a restart.
+ */
+export const useSystemAudioPermission = (): {
+  permission: SystemAudioPermission | null
+  /** Shows the macOS prompt if the user has not decided yet. */
+  request: () => Promise<SystemAudioPermission | null>
+  refresh: () => Promise<void>
+} => {
+  const [permission, setPermission] = useState<SystemAudioPermission | null>(null)
+  const refresh = useCallback(async () => {
+    const r = await recorder().systemAudioPermission()
+    setPermission(r.ok ? r.value : 'unknown')
+  }, [])
+  const request = useCallback(async () => {
+    const r = await recorder().requestSystemAudioPermission()
+    const next = r.ok ? r.value : 'unknown'
+    setPermission(next)
+    return next
+  }, [])
+  useEffect(() => {
+    void refresh()
+    const onFocus = () => void refresh()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
+  return { permission, request, refresh }
+}
+
+/** System audio may be recorded. 'unknown' (could not check) is let through; the silence warning still guards it. */
+export const systemAudioAllowed = (permission: SystemAudioPermission | null): boolean => permission === 'granted' || permission === 'unknown'
