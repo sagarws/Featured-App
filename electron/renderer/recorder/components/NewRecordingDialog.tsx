@@ -100,6 +100,8 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
     try {
       const next = await request()
       if (next === 'granted') setAudio(k === 'audio' ? 'system+mic' : 'system')
+      // No prompt shown, or not granted: the setting has to be changed by hand.
+      else void window.printAgent.recorder.openPrivacy('audio')
     } finally {
       setAsking(false)
     }
@@ -266,7 +268,7 @@ const NewRecordingDialog = ({ kind, settings, storage, busy, error, onClose, onS
                 }
               >
                 {permission === 'denied'
-                  ? 'System audio is turned off for this app. Switch it on under Screen & System Audio Recording → System Audio Recording Only, then come back.'
+                  ? 'System audio is turned off for this app. In System Settings → Screen & System Audio Recording, add or switch on TrackVid Print Agent in the lower list, System Audio Recording Only, then come back.'
                   : 'Allow system audio to record other people in calls, videos and apps.'}
               </Alert>
             )}

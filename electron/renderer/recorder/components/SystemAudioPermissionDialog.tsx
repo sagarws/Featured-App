@@ -16,6 +16,8 @@ const SystemAudioPermissionDialog = () => {
   const [decided, setDecided] = useState(false)
   const [asking, setAsking] = useState(false)
   const [dontAsk, setDontAsk] = useState(false)
+  // macOS answered without granting (or showed no prompt): guide the user to System Settings.
+  const [notGranted, setNotGranted] = useState(false)
 
   // Decide once per launch, when both the setting and the permission are known.
   useEffect(() => {
@@ -40,13 +42,14 @@ const SystemAudioPermissionDialog = () => {
   const allow = async () => {
     setAsking(true)
     try {
-      await request()
+      const next = await request()
+      if (next !== 'granted') setNotGranted(true)
     } finally {
       setAsking(false)
     }
   }
 
-  const denied = permission === 'denied'
+  const denied = permission === 'denied' || notGranted
   return (
     <Dialog open={open} onClose={asking ? undefined : close} maxWidth='xs' fullWidth>
       <DialogTitle>
@@ -63,8 +66,10 @@ const SystemAudioPermissionDialog = () => {
           </Typography>
           {denied ? (
             <Typography variant='body2' color='text.secondary'>
-              It is currently turned off. Click <b>Open System Settings</b>, go to <b>Screen &amp; System Audio Recording</b>, and switch this app on
-              under <b>System Audio Recording Only</b>. Then come back here.
+              macOS has not given this app system-audio access. Click <b>Open System Settings</b>. Under <b>System Audio Recording Only</b> (the
+              lower list), click <b>+</b> and add <b>TrackVid Print Agent</b>, or switch it on if it is already there. Then come back here.
+              Being switched on in the upper <b>Screen &amp; System Audio Recording</b> list alone is not enough: that covers the screen, and
+              system audio is checked separately.
             </Typography>
           ) : (
             <Typography variant='body2' color='text.secondary'>
