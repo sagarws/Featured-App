@@ -14,6 +14,8 @@ import { enableCaptureFeatures, registerDisplayMediaHandler } from './recorder/c
 import { registerRecorderIpc } from './recorder/ipc'
 import { markInterruptedSessions, registerMediaProtocol, registerMediaScheme } from './recorder/library'
 import { hasActiveRecording, shutdownRecorder } from './recorder/session'
+import { registerTranscriberIpc } from './transcriber/ipc'
+import { loadTranscripts, shutdownTranscriber } from './transcriber/service'
 
 app.setAppUserModelId(APP_ID)
 
@@ -46,6 +48,9 @@ if (!app.requestSingleInstanceLock()) {
     registerDisplayMediaHandler()
     registerMediaProtocol()
     registerRecorderIpc()
+    // Transcripts: saved jobs (one left mid-run is marked failed), then the IPC.
+    loadTranscripts()
+    registerTranscriberIpc()
 
     const hidden = launchedHidden()
     if (hidden && process.platform === 'darwin') app.dock?.hide()
@@ -86,6 +91,7 @@ if (!app.requestSingleInstanceLock()) {
     markQuitting()
     logger.info('Shutting down')
     stopPrinterMonitor()
+    shutdownTranscriber()
     void stopServer()
     destroyTray()
     BrowserWindow.getAllWindows().forEach(window => window.destroy())

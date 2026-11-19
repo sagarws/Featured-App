@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
-import { FiberSmartRecordOutlined } from '@mui/icons-material'
+import { FiberSmartRecordOutlined, SubtitlesOutlined } from '@mui/icons-material'
 import type { AgentState } from '@shared/types/agent'
 import { SIDEBAR } from '../theme/brand'
 import logo from '../assets/app-icon.png'
 
-export type Page = 'home' | 'recorder' | 'settings'
+export type Page = 'home' | 'recorder' | 'transcripts' | 'settings'
 
 // A Tabler class from styles/icons.css, or a component for icons not in that set.
 const NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'home', label: 'Home', icon: 'tabler-smart-home' },
   { id: 'recorder', label: 'Recorder', icon: <FiberSmartRecordOutlined sx={{ fontSize: 20 }} /> },
+  { id: 'transcripts', label: 'Transcripts', icon: <SubtitlesOutlined sx={{ fontSize: 20 }} /> },
   { id: 'settings', label: 'Settings', icon: 'tabler-settings' }
 ]
 

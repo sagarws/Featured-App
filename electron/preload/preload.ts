@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC, RECORDER_IPC } from '@shared/constants/channels'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
+import { IPC, RECORDER_IPC, TRANSCRIBER_IPC } from '@shared/constants/channels'
 import type { AgentState, Result, ThemeMode } from '@shared/types/agent'
 import type {
   CaptureArea,
@@ -13,6 +13,7 @@ import type {
   StorageInfo,
   SystemAudioPermission
 } from '@shared/types/recorder'
+import type { TranscriptExportFormat, TranscriptJob, TranscriptLanguage, TranscriptModel, TranscriptModelInfo } from '@shared/types/transcriber'
 
 /** Subscribe to a push channel; returns the unsubscribe. */
 const on = <T>(channel: string, listener: (value: T) => void): (() => void) => {
@@ -101,6 +102,22 @@ const api = {
       done: (area: CaptureArea | null): void => ipcRenderer.send(RECORDER_IPC.regionDone, area),
       onReset: (listener: () => void): (() => void) => on(RECORDER_IPC.regionReset, () => listener())
     }
+  },
+
+  /** Video / audio → text — see electron/main/transcriber. */
+  transcriber: {
+    chooseFiles: (): Promise<Result<string[]>> => ipcRenderer.invoke(TRANSCRIBER_IPC.chooseFiles),
+    /** The disk path of a file dropped on the page ('' if it has none). */
+    pathForFile: (file: File): string => webUtils.getPathForFile(file),
+    start: (files: string[], language: TranscriptLanguage, model: TranscriptModel): Promise<Result<TranscriptJob[]>> =>
+      ipcRenderer.invoke(TRANSCRIBER_IPC.start, files, language, model),
+    list: (): Promise<Result<TranscriptJob[]>> => ipcRenderer.invoke(TRANSCRIBER_IPC.list),
+    models: (): Promise<Result<TranscriptModelInfo[]>> => ipcRenderer.invoke(TRANSCRIBER_IPC.models),
+    cancel: (id: string): Promise<Result> => ipcRenderer.invoke(TRANSCRIBER_IPC.cancel, id),
+    remove: (id: string): Promise<Result> => ipcRenderer.invoke(TRANSCRIBER_IPC.remove, id),
+    exportFile: (id: string, format: TranscriptExportFormat): Promise<Result<string | null>> => ipcRenderer.invoke(TRANSCRIBER_IPC.exportFile, id, format),
+    onJob: (listener: (job: TranscriptJob) => void): (() => void) => on(TRANSCRIBER_IPC.job, listener),
+    onListChanged: (listener: () => void): (() => void) => on(TRANSCRIBER_IPC.listChanged, () => listener())
   }
 }
 

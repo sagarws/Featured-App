@@ -16,7 +16,13 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       minify: 'esbuild',
-      lib: { entry: { main: resolve(__dirname, 'electron/main/main.ts') } },
+      // transcriberWorker: the utility process that runs Whisper (electron/main/transcriber).
+      lib: {
+        entry: {
+          main: resolve(__dirname, 'electron/main/main.ts'),
+          transcriberWorker: resolve(__dirname, 'electron/main/transcriber/worker.ts')
+        }
+      },
       rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].js' } }
     }
   },

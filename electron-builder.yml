@@ -8,14 +8,23 @@ files:
   - out/**
   - package.json
   - '!**/*.map'
+  # Transcripts (transformers.js) in Node use onnxruntime-node only: the web
+  # runtime is not loaded, and sharp (images) is replaced by a stand-in in
+  # electron/main/transcriber/worker.ts.
+  - '!node_modules/onnxruntime-web/**'
+  - '!node_modules/sharp/**'
+  - '!node_modules/@img/**'
 asar: true
-# No native modules. pdf-to-printer is plain JS that spawns a bundled
-# SumatraPDF.exe, so nothing needs rebuilding against Electron's ABI.
+# pdf-to-printer is plain JS that spawns a bundled SumatraPDF.exe, and
+# onnxruntime-node ships prebuilt N-API binaries (ABI-stable), so nothing needs
+# rebuilding against Electron's ABI.
 npmRebuild: false
 # SumatraPDF.exe cannot be executed from inside app.asar. The main process
 # points pdf-to-printer at the unpacked copy (see electron/main/print/windows.ts).
+# onnxruntime's .node and its shared library must be real files on disk too.
 asarUnpack:
   - node_modules/pdf-to-printer/dist/*.exe
+  - node_modules/onnxruntime-node/bin/**
 # The tray icon is read from disk at runtime, outside the asar.
 extraResources:
   - from: build/icon.png
@@ -25,6 +34,9 @@ extraResources:
   - from: resources/ffmpeg/${os}-${arch}
     to: ffmpeg
 win:
+  # Transcripts: only this platform's speech engine binaries.
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**'
   target:
     - nsis
   artifactName: Featured-App-${arch}-setup.${ext}
@@ -37,6 +49,10 @@ nsis:
   shortcutName: Featured App
 mac:
   category: public.app-category.business
+  # Transcripts: only this platform's speech engine binaries. onnxruntime-node
+  # has no Intel (x64) Mac build, so Transcripts shows an error there.
+  files:
+    - '!node_modules/onnxruntime-node/bin/napi-v*/{win32,linux}/**'
   # Recorder: checks/asks for the "System Audio Recording" permission
   # (scripts/build-native-mac.cjs). Found at <resources>/native.
   extraResources:

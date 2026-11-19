@@ -68,3 +68,18 @@ export const RECORDER_IPC = {
   /** Camera bubble (#camera): which camera to show. */
   cameraDevice: 'recorder:camera-device'
 } as const
+
+/** Video / audio → text — see electron/main/transcriber. */
+export const TRANSCRIBER_IPC = {
+  chooseFiles: 'transcriber:choose-files',
+  start: 'transcriber:start',
+  list: 'transcriber:list',
+  cancel: 'transcriber:cancel',
+  remove: 'transcriber:remove',
+  exportFile: 'transcriber:export',
+  models: 'transcriber:models',
+  /** Push: one job changed (progress, status, result). */
+  job: 'transcriber:job',
+  /** Push: a job was added or removed. */
+  listChanged: 'transcriber:list-changed'
+} as const

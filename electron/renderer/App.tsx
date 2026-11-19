@@ -7,6 +7,7 @@ import TopBar from './layout/TopBar'
 import HomePage from './pages/HomePage'
 import SettingsPage from './pages/SettingsPage'
 import RecorderPage from './recorder/RecorderPage'
+import TranscriptPage from './transcriber/TranscriptPage'
 import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
@@ -27,6 +28,7 @@ const App = ({ state }: { state: AgentState }) => {
         <Box component='main' sx={{ flex: 1, overflow: 'auto', px: 5, py: 5 }}>
           {page === 'home' && <HomePage state={state} query={query} />}
           {page === 'recorder' && <RecorderPage />}
+          {page === 'transcripts' && <TranscriptPage />}
           {page === 'settings' && <SettingsPage state={state} />}
         </Box>
       </Box>
