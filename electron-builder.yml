@@ -19,6 +19,8 @@ asar: true
 # onnxruntime-node ships prebuilt N-API binaries (ABI-stable), so nothing needs
 # rebuilding against Electron's ABI.
 npmRebuild: false
+# Refuses to package without this target's bundled ffmpeg (scripts/check-ffmpeg.cjs).
+beforePack: scripts/check-ffmpeg.cjs
 # SumatraPDF.exe cannot be executed from inside app.asar. The main process
 # points pdf-to-printer at the unpacked copy (see electron/main/print/windows.ts).
 # onnxruntime's .node and its shared library must be real files on disk too.
