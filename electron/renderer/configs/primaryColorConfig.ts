@@ -10,21 +10,22 @@ export type PrimaryColorConfig = {
  * (see settingsContext's `defaultSettings`), so this list's order is a shipped
  * decision, not a layout preference.
  *
- * INK IS FIRST, which makes it the default and the one Reset returns to. It is
- * the near-black Vercel accents everything with, and an app that opens in it
- * reads as the product it is now dressed as rather than as an unconfigured
- * shell. Ordering it here rather than only changing `DEFAULT_THEME_SETTINGS`
- * is deliberate: `defaultSettings()` in the ported settings context reads THIS
- * list's first entry, and it is what the Reset button and the "have the
- * settings changed?" check both use. Set the default in one place and not the
- * other and Reset puts back a colour the app never shipped with — which is the
- * drift the note on DEFAULT_THEME_SETTINGS already records happening once.
+ * THE ICON COLOUR IS FIRST, which makes it the default and the one Reset
+ * returns to: the blue-violet of the app icon (BRAND_PRIMARY in
+ * theme/brand.ts — keep the two equal). `defaultSettings()` in the settings
+ * context reads THIS list's first entry, and Reset and the "have the settings
+ * changed?" check both use it, so the default lives here and nowhere else.
  *
- * TrackVid's teal is still here, one place down. This change re-dressed the
- * app; it did not retire the brand colour, and an operator who wants it is one
- * swatch away.
+ * Ink (near-black) and TrackVid's teal are still here as presets.
  */
 const primaryColorConfig: PrimaryColorConfig[] = [
+  {
+    // The app icon's blue-violet (build/icon.png).
+    name: 'primary-brand',
+    light: '#7380FF',
+    main: '#4353FF',
+    dark: '#2F3BD6'
+  },
   {
     // Near-black. `light` and `dark` bracket it so the hover and pressed states
     // have somewhere to go — at #171717 a "darker" press is almost the same
