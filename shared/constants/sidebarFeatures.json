@@ -1,0 +1,9 @@
+{
+  "home": true,
+  "screenshots": true,
+  "fileshare": true,
+  "recorder": true,
+  "transcripts": true,
+  "remote": true,
+  "settings": true
+}
