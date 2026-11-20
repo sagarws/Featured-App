@@ -264,6 +264,9 @@ const api = {
     diagnostics: (): Promise<Result<Record<string, unknown>>> => ipcRenderer.invoke(REMOTE_IPC.diagnostics),
     openPrivacy: (pane: 'screen' | 'accessibility' | 'firewall'): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.openPrivacy, pane),
     requestAccessibility: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.requestAccessibility),
+    /** Windows: install / remove the lock-screen agent (administrator prompt). */
+    installSecureAgent: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.installSecureAgent),
+    removeSecureAgent: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.removeSecureAgent),
     chooseTrustedFolder: (): Promise<Result<string | null>> => ipcRenderer.invoke(REMOTE_IPC.chooseTrustedFolder),
     sendFiles: (sessionId: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.sendFiles, sessionId),
     cancelTransfer: (transferId: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.cancelTransfer, transferId),
@@ -279,6 +282,9 @@ const api = {
       config: (): Promise<Result<ViewerConfig>> => ipcRenderer.invoke(REMOTE_IPC.viewerConfig),
       ready: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.viewerReady),
       restart: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.viewerRestart),
+      sendCtrlAltDel: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.viewerCtrlAltDel),
+      /** The host's lock screen (JPEG), while it is locked. */
+      onSecureFrame: (listener: (frame: { width: number; height: number; jpeg: Uint8Array }) => void): (() => void) => on(REMOTE_IPC.viewerSecureFrame, listener),
       signal: (signal: SignalMessage): void => ipcRenderer.send(REMOTE_IPC.viewerSignal, signal),
       quality: (preset: QualityPreset, priority: QualityPriority): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.viewerQuality, preset, priority),
       display: (id: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.viewerDisplay, id),
@@ -298,11 +304,11 @@ const api = {
       /** Call right before getDisplayMedia(): the main process answers it with this display. */
       arm: (displayId: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.engineArm, displayId),
       signal: (signal: SignalMessage): void => ipcRenderer.send(REMOTE_IPC.engineSignal, signal),
-      state: (state: { kind: 'ready' | 'display' | 'error' | 'connected'; id?: string; message?: string }): void => ipcRenderer.send(REMOTE_IPC.engineState, state),
+      state: (state: { kind: 'ready' | 'display' | 'error' | 'connected' | 'recaptured'; id?: string; message?: string }): void => ipcRenderer.send(REMOTE_IPC.engineState, state),
       input: (events: InputEvent[]): void => ipcRenderer.send(REMOTE_IPC.engineInput, events),
       onSignal: (listener: (signal: SignalMessage) => void): (() => void) => on(REMOTE_IPC.engineSignalIn, listener),
       onCommand: (
-        listener: (command: { type: 'start' } | { type: 'stop' } | { type: 'quality'; preset: QualityPreset; priority: QualityPriority } | { type: 'display'; id: string }) => void
+        listener: (command: { type: 'start' } | { type: 'stop' } | { type: 'recapture' } | { type: 'quality'; preset: QualityPreset; priority: QualityPriority } | { type: 'display'; id: string }) => void
       ): (() => void) => on(REMOTE_IPC.engineCommand, listener)
     }
   }

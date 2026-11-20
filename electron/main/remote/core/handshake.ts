@@ -197,8 +197,11 @@ export interface HostPolicy {
   identity: () => LocalIdentity
   attended: () => boolean
   unattended: () => UnattendedSecret | null
-  /** Unattended is switched on but no password is set yet → refuse rather than fall back. */
-  busy: () => boolean
+  /**
+   * Is a session in the way? With `peerId`: a session of that same device does
+   * not count — its new connection replaces the stale one (see grant()).
+   */
+  busy: (peerId?: string) => boolean
   isBlocked: (peerId: string) => boolean
   /** Can this computer share its screen right now (macOS Screen Recording)? */
   canShareScreen: () => boolean
@@ -296,7 +299,7 @@ export const runHostHandshake = async (socket: Duplex, address: string, policy: 
       return sendGrant(channel, result, 'resume')
     }
 
-    if (policy.busy()) return deny(channel, 'busy')
+    if (policy.busy(peer.id)) return deny(channel, 'busy')
     if (!policy.canShareScreen()) return deny(channel, 'screen-permission')
 
     if (method === 'password') {
@@ -342,7 +345,7 @@ export const runHostHandshake = async (socket: Duplex, address: string, policy: 
         policy.audit('rejected', peer, 'Declined.')
         return deny(channel, 'rejected')
       }
-      if (policy.busy()) return deny(channel, 'busy')
+      if (policy.busy(peer.id)) return deny(channel, 'busy')
       // A view-only request is never upgraded to control by the host's answer.
       const permission: RemotePermission = requested === 'view' ? 'view' : answer.permission
       const payload = policy.grant({ channel, peer, method: 'attended', permission, minutes: answer.minutes })

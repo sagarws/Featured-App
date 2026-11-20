@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { InputEvent, SignalMessage, ViewerConfig, ViewerStats } from '@shared/types/remote'
-import { CandidateQueue, candidateSignal, viewerStats } from '../rtc'
+import { CandidateQueue, candidateSignal, preferCodecs, viewerStats } from '../rtc'
 
 /*
  * The viewer's side of WebRTC. The host offers (video + two data channels);
@@ -88,6 +88,10 @@ export const useRemoteConnection = (config: ViewerConfig | null, video: React.Re
         }
       }
       await next.setRemoteDescription({ type: 'offer', sdp })
+      // The answer's codec order decides what the host encodes: H.264 (hardware) first unless chosen otherwise.
+      for (const transceiver of next.getTransceivers()) {
+        if (transceiver.receiver.track.kind === 'video') preferCodecs(transceiver, config.codec, config.hardwareAcceleration)
+      }
       candidates.flush()
       const answer = await next.createAnswer()
       await next.setLocalDescription(answer)

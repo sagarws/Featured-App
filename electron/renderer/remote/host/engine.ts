@@ -34,9 +34,39 @@ export const runHostEngine = async (): Promise<void> => {
   let stopped = false
   const candidates = new CandidateQueue(() => pc)
 
+  let lastError = ''
   const fail = (message: string): void => {
     appLog('error', 'remote-host', message)
-    api.state({ kind: 'error', message })
+    // Once per problem, not on every retry.
+    if (message !== lastError) api.state({ kind: 'error', message })
+    lastError = message
+  }
+
+  // ── capture watchdog: whatever stops the capture (lock screen, another remote
+  // tool closing, a resolution change, display sleep), start it again ──
+  let retryTimer: number | null = null
+  const scheduleRecapture = (delayMs: number): void => {
+    if (stopped || retryTimer !== null) return
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null
+      void recapture()
+    }, delayMs)
+  }
+  const recapture = async (): Promise<void> => {
+    if (stopped) return
+    try {
+      const next = await capture(displayId)
+      const old = track
+      track = next
+      if (sender) await sender.replaceTrack(next)
+      old?.stop()
+      lastError = ''
+      await applyQuality()
+      api.state({ kind: 'recaptured' })
+    } catch (error) {
+      fail(`Screen capture is not available right now (${error instanceof Error ? error.message : String(error)}); retrying.`)
+      scheduleRecapture(3000)
+    }
   }
 
   const capture = async (id: string): Promise<MediaStreamTrack> => {
@@ -47,7 +77,13 @@ export const runHostEngine = async (): Promise<void> => {
     if (!next) throw new Error('No video from the screen capture.')
     next.contentHint = priority === 'readability' ? 'text' : 'motion'
     next.addEventListener('ended', () => {
-      if (!stopped && next === track) fail('Screen capture stopped on the shared computer.')
+      if (!stopped && next === track) scheduleRecapture(1000)
+    })
+    // Muted = no frames arriving (e.g. the desktop went away). Give it a moment, then capture again.
+    next.addEventListener('mute', () => {
+      window.setTimeout(() => {
+        if (!stopped && next === track && next.muted) scheduleRecapture(0)
+      }, 3000)
     })
     return next
   }
@@ -112,10 +148,19 @@ export const runHostEngine = async (): Promise<void> => {
   const negotiate = async (): Promise<void> => {
     closePc()
     lastMoveSeq = -1
-    if (!track || track.readyState === 'ended') track = await capture(displayId)
+    if (!track || track.readyState === 'ended') {
+      try {
+        track = await capture(displayId)
+      } catch (error) {
+        // Still connect: input (and the lock-screen picture) do not need the video; the track is added when capture works.
+        track = null
+        fail(`Screen capture is not available right now (${error instanceof Error ? error.message : String(error)}); retrying.`)
+        scheduleRecapture(3000)
+      }
+    }
     const next = new RTCPeerConnection({ iceServers: config.iceServers, bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require' })
     pc = next
-    const transceiver = next.addTransceiver(track, { direction: 'sendonly' })
+    const transceiver = track ? next.addTransceiver(track, { direction: 'sendonly' }) : next.addTransceiver('video', { direction: 'sendonly' })
     sender = transceiver.sender
     preferCodecs(transceiver, config.codec, config.hardwareAcceleration)
     for (const channel of [next.createDataChannel('input', { ordered: true }), next.createDataChannel('move', { ordered: false, maxRetransmits: 0 })]) {
@@ -150,6 +195,7 @@ export const runHostEngine = async (): Promise<void> => {
 
   const stop = (): void => {
     stopped = true
+    if (retryTimer !== null) window.clearTimeout(retryTimer)
     closePc()
     track?.stop()
     track = null
@@ -179,6 +225,7 @@ export const runHostEngine = async (): Promise<void> => {
       autoStep = 0
       void applyQuality()
     } else if (command.type === 'display') void switchDisplay(command.id).catch((error: unknown) => fail(`Could not switch the screen: ${String(error)}`))
+    else if (command.type === 'recapture') void recapture()
     else if (command.type === 'stop') stop()
   })
 

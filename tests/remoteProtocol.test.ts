@@ -217,6 +217,17 @@ describe('unattended access', () => {
   })
 })
 
+describe('a stale session from the same controller', () => {
+  it('does not block that controller from connecting again, but still blocks other devices', async () => {
+    // The host has a session of `client` that it has not yet noticed is dead.
+    const h = await startHost({ password: 'Correct-Horse-9', busy: (peerId?: string) => peerId !== client.id })
+    const again = await connectTo(h, { password: 'Correct-Horse-9' })
+    expect(again.granted?.method).toBe('password')
+    const other = makeIdentity('Office PC 3')
+    await expect(connectTo(h, { identity: other, password: 'Correct-Horse-9' })).rejects.toMatchObject({ code: 'busy' })
+  })
+})
+
 describe('identity checks', () => {
   it('refuses a host whose key does not match the dialled ID', async () => {
     const h = await startHost()

@@ -162,6 +162,8 @@ export const REMOTE_IPC = {
   requestAccessibility: 'remote:request-accessibility',
   chooseTrustedFolder: 'remote:choose-trusted-folder',
   sendFiles: 'remote:send-files',
+  installSecureAgent: 'remote:install-secure-agent',
+  removeSecureAgent: 'remote:remove-secure-agent',
   cancelTransfer: 'remote:cancel-transfer',
   /** Push: RemoteStatus, on every change. */
   status: 'remote:status',
@@ -181,6 +183,9 @@ export const REMOTE_IPC = {
   viewerCapture: 'remote:viewer-capture',
   viewerClipboard: 'remote:viewer-clipboard',
   viewerRestart: 'remote:viewer-restart',
+  viewerCtrlAltDel: 'remote:viewer-ctrl-alt-del',
+  /** Push to the viewer: a picture of the host's lock screen (JPEG). */
+  viewerSecureFrame: 'remote:viewer-secure-frame',
   /** Push to the viewer: SignalMessage from the host. */
   viewerSignalIn: 'remote:viewer-signal-in',
   /** Push to the viewer: session events (timer, permission, displays, warning, end, clipboard). */

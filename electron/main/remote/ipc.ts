@@ -146,6 +146,8 @@ export const registerRemoteIpc = (): void => {
     await shell.openExternal(url)
   })
   handle(REMOTE_IPC.requestAccessibility, ['main'], () => service.requestInputPermission())
+  handle(REMOTE_IPC.installSecureAgent, ['main'], () => service.installSecureAgent())
+  handle(REMOTE_IPC.removeSecureAgent, ['main'], () => service.removeSecureAgent())
   handle(REMOTE_IPC.chooseTrustedFolder, ['main'], async event => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const options: Electron.OpenDialogOptions = { title: 'Folder for files from trusted transfers', defaultPath: store.getRemoteSettings().trustedFolder || service.defaultTransferFolder(), properties: ['openDirectory', 'createDirectory'] }
@@ -191,6 +193,7 @@ export const registerRemoteIpc = (): void => {
   handle(REMOTE_IPC.viewerConfig, null, event => viewerOf(event).config())
   handle(REMOTE_IPC.viewerReady, null, event => viewerOf(event).viewerReady())
   handle(REMOTE_IPC.viewerRestart, null, event => viewerOf(event).restartMedia())
+  handle(REMOTE_IPC.viewerCtrlAltDel, null, event => viewerOf(event).sendCtrlAltDel())
   handle(REMOTE_IPC.viewerQuality, null, (event, preset, priority) => {
     if (!QUALITY_PRESETS.includes(preset as QualityPreset)) throw new Error('Unknown quality.')
     viewerOf(event).setQuality(preset as QualityPreset, priority === 'responsiveness' ? 'responsiveness' : 'readability')

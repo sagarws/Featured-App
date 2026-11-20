@@ -215,9 +215,12 @@ right/middle click, smooth wheel/trackpad scrolling and Unicode text work.
 
 Cannot be done (OS restrictions — not simulated):
 
-- **Ctrl+Alt+Delete**, UAC prompts, the lock / login screen on Windows (secure
-  desktop): needs a SYSTEM service; not implemented. Windows also blocks input
-  into windows running **as administrator** unless the app does too.
+- **Windows lock screen**: possible only with *Lock screen access* turned on
+  for that PC (Security tab, one-time administrator approval) — see §7a.
+  Without it the viewer shows "The remote computer is locked" and the picture
+  returns by itself once someone unlocks it. **UAC prompts** are never
+  controllable (on purpose), and Windows blocks input into windows running
+  **as administrator** unless the app does too.
 - **⌘Tab / ⌘Space / Mission Control** on a *Mac viewer* are taken by macOS
   before any app; use the toolbar's *Send keys* menu. On a Mac **host** they
   work.
@@ -225,6 +228,34 @@ Cannot be done (OS restrictions — not simulated):
 - **Linux Wayland**: no injection (view only), capture via portal prompt.
 - Secure text fields (macOS "Secure Input", password managers) may ignore
   injected keys by design.
+
+### 7a. Lock screen, keeping the picture alive, reconnecting
+
+- **Keeping the picture alive (all OSes):** while this computer is shared its
+  display is kept awake (no display sleep / screen saver lock). If the capture
+  stops — the screen locks, another remote tool such as AnyDesk closes and
+  changes the display, the resolution changes, the PC wakes from sleep — the
+  capture window starts it again by itself (retrying every few seconds), and
+  connects even when capture is not possible yet, so input and the lock-screen
+  picture still work.
+- **Windows lock screen:** *Security → Lock screen access* installs
+  `native/win/RemoteSecureAgent.cs` (run by `remote-secure-agent.ps1`) into
+  `%ProgramFiles%\Featured App Remote Agent` and registers the scheduled task
+  `FeaturedAppRemoteAgent` (SYSTEM, at startup). It keeps a copy of itself in
+  the signed-in user's session, which — **only while that session is locked** —
+  sends JPEG pictures of the lock screen (~4/s, only when changed) and injects
+  keyboard/mouse there, so you can type the Windows password/PIN from the
+  viewer; *Send keys → Ctrl+Alt+Delete* works where Windows allows software
+  SAS (policy `SoftwareSASGeneration`). Unlocked, it refuses everything except
+  "status", so it cannot click UAC prompts. Requires that someone signed in to
+  Windows since the last restart (the app runs in that session). Remove it from
+  the same place.
+- **Controller gone without disconnecting** (app closed, crash, sleep, network
+  lost): both sides ping every 2 s; 8 s of silence = link lost. The host then
+  waits 30 s for that controller to resume — but a **new connection from the
+  same computer** (proven by its device key) replaces the stale session at
+  once instead of being told "busy". Other computers are still refused while
+  a session is live. Before this fix the host stayed busy for ~29 s (measured).
 
 ## 8. Tests
 
@@ -265,10 +296,23 @@ Status as delivered: **none of these has been run on two physical machines.**
 | 19 | CPU, RAM, bitrate, fps, latency (30 s benchmark) | Record per profile | not run |
 | 20 | Existing features (printing, recorder, screenshots, transcripts) | Unchanged | automated suites pass |
 
+### Measured on the real office LAN (Mac → Windows 11, 2026-11-20)
+
+MacBook Pro M3 Pro (Wi-Fi, 192.168.1.19) → DESKTOP-MS84JJ8 (Windows 11,
+192.168.1.58), unattended password, no input sent: found by LAN discovery,
+probe 39 ms, connect 654–680 ms, video 1920×1080 after 2.9–3.9 s, network RTT
+12–14 ms, input RTT 7–15 ms. That run also found the codec bug (software AV1 was
+negotiated; now H.264) and reproduced the 29 s "busy" after a killed controller
+(fixed above, needs the new build on the remote). Frame rate/bitrate were not
+measured: the remote screen was static during the test.
+
 ## 9. Not done / unsupported
 
 - Validation on two physical machines, Windows, and Linux (see checklist).
-- Windows secure desktop / UAC / Ctrl+Alt+Del (needs a SYSTEM service).
+- The Windows lock-screen agent's C# has not been compiled or run on Windows
+  yet (no Windows / .NET here). Check it on a Windows PC with:
+  `powershell -NoProfile -Command "Add-Type -Path native\win\RemoteSecureAgent.cs -ReferencedAssemblies System.Drawing,System.Core; 'compiled'"`
+- Sign-in after a reboot (no user session yet) and UAC prompts.
 - Wayland keyboard/mouse control (needs the RemoteDesktop portal / libei).
 - Audio from the remote computer; browsing the remote file system (files are
   pushed by either side, not pulled).

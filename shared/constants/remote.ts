@@ -28,6 +28,12 @@ export const EXPIRY_WARNING_MS = 5 * 60_000
 /** How long a host keeps a session whose connection dropped, waiting for the viewer to come back. */
 export const RESUME_WINDOW_MS = 30_000
 
+/** Both sides ping this often while a session is up… */
+export const KEEPALIVE_MS = 2000
+
+/** …and treat this much silence as a lost link (the controller closed, crashed, slept or lost the network). */
+export const LINK_TIMEOUT_MS = 8000
+
 /** How long the person at the host has to answer a request. */
 export const REQUEST_TIMEOUT_MS = 60_000
 

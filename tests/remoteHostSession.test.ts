@@ -85,6 +85,10 @@ let ended: HostSession[]
 let inject: ReturnType<typeof vi.fn>
 let releaseAll: ReturnType<typeof vi.fn>
 let history: ReturnType<typeof vi.fn>
+let secureInject: ReturnType<typeof vi.fn>
+let secureSas: ReturnType<typeof vi.fn>
+let agentRunning: boolean
+let lockedAtStart: boolean
 
 const start = (permission: 'control' | 'view', minutes: SessionMinutes) => {
   const channel = new FakeChannel()
@@ -104,6 +108,10 @@ beforeEach(() => {
   inject = vi.fn()
   releaseAll = vi.fn()
   history = vi.fn()
+  secureInject = vi.fn()
+  secureSas = vi.fn()
+  agentRunning = true
+  lockedAtStart = false
   ctx = {
     settings: () => settings,
     iceServers: () => [],
@@ -115,6 +123,14 @@ beforeEach(() => {
       current: () => ({ state: 'granted', detail: null }),
       check: () => Promise.resolve({ state: 'granted', detail: null })
     },
+    secure: {
+      available: () => agentRunning,
+      inject: secureInject,
+      sendCtrlAltDel: secureSas,
+      releaseAll: vi.fn(),
+      frame: () => Promise.resolve({ width: 1920, height: 1080, jpeg: Buffer.from('jpeg') })
+    },
+    hostLocked: () => lockedAtStart,
     transfers: { handle: () => false, endSession: vi.fn() },
     transferLink: () => ({ sessionId: '', channel: () => null, peerName: '' }),
     hostSessionEnded: (s: HostSession) => ended.push(s),
@@ -279,6 +295,19 @@ describe('disconnect, revoke and reconnect', () => {
     expect(session.state).toBe('ended')
   })
 
+  it('notices within 8 s that the controller is gone (closed / crashed / asleep)', () => {
+    const channel = new FakeChannel()
+    const last = Date.now()
+    Object.defineProperty(channel, 'lastReceivedAt', { get: () => last })
+    const session = new HostSession(ctx, peer, 'password', 'control', 30, channel as unknown as Channel)
+    session.start()
+    vi.advanceTimersByTime(7000)
+    expect(session.state).toBe('active')
+    expect(channel.of('ping').length).toBeGreaterThanOrEqual(3)
+    vi.advanceTimersByTime(2000)
+    expect(session.state).toBe('reconnecting')
+  })
+
   it('a silent link (no keepalive for 20 s) is treated as dropped', () => {
     const channel = new FakeChannel()
     let last = Date.now()
@@ -289,5 +318,73 @@ describe('disconnect, revoke and reconnect', () => {
     last = Date.now()
     vi.advanceTimersByTime(21_000)
     expect(session.state).toBe('reconnecting')
+  })
+})
+
+describe('lock screen (enforced on the host)', () => {
+  it('while locked, input goes to the lock-screen agent only, and the viewer is told', () => {
+    const { session, channel } = start('control', 30)
+    session.setLocked(true)
+    expect(channel.of('locked')[0]).toMatchObject({ locked: true, secure: true })
+    session.inject([click, { k: 'kd', c: 'KeyA' }])
+    expect(inject).not.toHaveBeenCalled()
+    expect(secureInject).toHaveBeenCalledTimes(2)
+    channel.deliver({ t: 'secure-sas' })
+    expect(secureSas).toHaveBeenCalledTimes(1)
+  })
+
+  it('streams the lock screen while locked', async () => {
+    const { session, channel } = start('control', 30)
+    session.setLocked(true)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(channel.of('secure-frame')[0]).toMatchObject({ width: 1920, height: 1080 })
+    // Unchanged pictures are not sent again for 2 s.
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(channel.of('secure-frame')).toHaveLength(1)
+  })
+
+  it('a view-only session cannot type on the lock screen or press Ctrl+Alt+Delete', () => {
+    const { session, channel } = start('view', 30)
+    session.setLocked(true)
+    session.inject([click])
+    channel.deliver({ t: 'secure-sas' })
+    expect(secureInject).not.toHaveBeenCalled()
+    expect(secureSas).not.toHaveBeenCalled()
+  })
+
+  it('without the agent, locked input is dropped (not sent to the normal helper)', () => {
+    agentRunning = false
+    const { session, channel } = start('control', 30)
+    session.setLocked(true)
+    expect(channel.of('locked')[0]).toMatchObject({ locked: true, secure: false })
+    session.inject([click])
+    expect(inject).not.toHaveBeenCalled()
+    expect(secureInject).not.toHaveBeenCalled()
+  })
+
+  it('unlocking restarts screen capture and returns to normal input', () => {
+    const { session, channel } = start('control', 30)
+    session.setLocked(true)
+    session.setLocked(false)
+    expect(channel.of('locked')[1]).toMatchObject({ locked: false })
+    expect(engines[0]?.sent).toContainEqual({ type: 'recapture' })
+    session.inject([click])
+    expect(inject).toHaveBeenCalledTimes(1)
+  })
+
+  it('knows the computer was already locked when the session started', () => {
+    lockedAtStart = true
+    const { session } = start('control', 30)
+    expect(session.locked).toBe(true)
+    expect(session.extra()['locked']).toBe(true)
+  })
+
+  it('the time limit still applies on the lock screen', () => {
+    const { session } = start('control', 5)
+    session.setLocked(true)
+    vi.advanceTimersByTime(5 * 60_000 + 1000)
+    expect(session.state).toBe('ended')
+    session.inject([click])
+    expect(secureInject).not.toHaveBeenCalled()
   })
 })

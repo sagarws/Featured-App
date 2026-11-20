@@ -23,6 +23,8 @@ import {
   FullscreenExitOutlined,
   FullscreenOutlined,
   InsightsOutlined,
+  LockOutlined,
+  MouseOutlined,
   KeyboardOutlined,
   MonitorOutlined,
   OneKOutlined,
@@ -49,7 +51,6 @@ import { useRemoteConnection } from './useRemoteConnection'
 type Fit = 'fit' | 'actual'
 
 const SPECIAL_KEYS: { label: string; codes: string[] }[] = [
-  { label: 'Ctrl + Alt + Delete (not possible — see docs)', codes: [] },
   { label: 'Alt + Tab', codes: ['AltLeft', 'Tab'] },
   { label: '⌘ / Windows key', codes: ['MetaLeft'] },
   { label: '⌘ + Tab', codes: ['MetaLeft', 'Tab'] },
@@ -90,6 +91,13 @@ const Viewer = () => {
   const [transfers, setTransfers] = useState<FileTransferInfo[]>([])
   const [now, setNow] = useState(() => Date.now())
   const [menu, setMenu] = useState<{ kind: 'quality' | 'display' | 'keys' | 'clipboard'; anchor: HTMLElement } | null>(null)
+  // Lock screen of the host (Windows agent): a live picture shown over the video.
+  const [locked, setLocked] = useState(false)
+  const [secureAgent, setSecureAgent] = useState(false)
+  const [secureUrl, setSecureUrl] = useState<string | null>(null)
+  const secureImg = useRef<HTMLImageElement | null>(null)
+  // The remote cursor is in the picture; a second (local) arrow on top is confusing.
+  const [showLocalCursor, setShowLocalCursor] = useState(false)
   const [bench, setBench] = useState<{ running: boolean; progress: number; result: string | null }>({ running: false, progress: 0, result: null })
 
   // ── load ──
@@ -103,6 +111,8 @@ const Viewer = () => {
       setDisplays(c.displays)
       setDisplayId(c.displayId)
       setQuality(c.quality)
+      setLocked(c.locked)
+      setSecureAgent(c.secureAgent)
       setPriority(c.priority)
       document.title = `${c.peerName} — Remote Desktop`
     })
@@ -150,6 +160,15 @@ const Viewer = () => {
           setExpiresAt(typeof event['expiresAt'] === 'number' ? event['expiresAt'] : null)
           void api.viewer.restart()
           break
+        case 'locked':
+          setLocked(event['locked'] === true)
+          setSecureAgent(event['secure'] === true)
+          if (event['locked'] !== true)
+            setSecureUrl(prev => {
+              if (prev) URL.revokeObjectURL(prev)
+              return null
+            })
+          break
         case 'end':
           setSession('ended')
           setEndReason(typeof event['reason'] === 'string' ? event['reason'] : 'The session ended.')
@@ -169,6 +188,20 @@ const Viewer = () => {
     const t = window.setTimeout(() => setNotice(null), 6000)
     return () => window.clearTimeout(t)
   }, [notice])
+
+  // Lock-screen pictures from the host.
+  useEffect(
+    () =>
+      api.viewer.onSecureFrame(frame => {
+        const url = URL.createObjectURL(new Blob([frame.jpeg as BlobPart], { type: 'image/jpeg' }))
+        setSecureUrl(prev => {
+          if (prev) URL.revokeObjectURL(prev)
+          return url
+        })
+      }),
+    [api]
+  )
+  const showSecure = locked && !!secureUrl
 
   const canControl = permission === 'control' && session === 'active' && media === 'connected'
 
@@ -221,12 +254,17 @@ const Viewer = () => {
 
   // ── pointer ──
   const toPoint = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+    // Over the lock-screen picture, coordinates are relative to it (the host's whole screen).
+    const img = secureImg.current
     const v = video.current
-    if (!v || !v.videoWidth || !v.videoHeight) return null
-    const r = v.getBoundingClientRect()
-    const scale = Math.min(r.width / v.videoWidth, r.height / v.videoHeight)
-    const w = v.videoWidth * scale
-    const h = v.videoHeight * scale
+    const el: HTMLElement | null = img && img.naturalWidth ? img : v
+    const natW = img && img.naturalWidth ? img.naturalWidth : (v?.videoWidth ?? 0)
+    const natH = img && img.naturalWidth ? img.naturalHeight : (v?.videoHeight ?? 0)
+    if (!el || !natW || !natH) return null
+    const r = el.getBoundingClientRect()
+    const scale = Math.min(r.width / natW, r.height / natH)
+    const w = natW * scale
+    const h = natH * scale
     const x = (clientX - (r.left + (r.width - w) / 2)) / w
     const y = (clientY - (r.top + (r.height - h) / 2)) / h
     if (x < 0 || y < 0 || x > 1 || y > 1) return null
@@ -504,6 +542,11 @@ const Viewer = () => {
               </IconButton>
             </span>
           </Tooltip>
+          <Tooltip title={showLocalCursor ? 'Hide my cursor (show only the remote one)' : 'Show my cursor too'}>
+            <IconButton size='small' color={showLocalCursor ? 'primary' : 'inherit'} onClick={() => setShowLocalCursor(s => !s)}>
+              <MouseOutlined fontSize='small' />
+            </IconButton>
+          </Tooltip>
           <Tooltip title='Connection statistics'>
             <IconButton size='small' color={showStats ? 'primary' : 'inherit'} onClick={() => setShowStats(s => !s)}>
               <InsightsOutlined fontSize='small' />
@@ -540,7 +583,7 @@ const Viewer = () => {
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onContextMenu={e => e.preventDefault()}
-        sx={{ flex: 1, minHeight: 0, position: 'relative', outline: 'none', overflow: fit === 'actual' ? 'auto' : 'hidden', cursor: canControl ? 'default' : 'not-allowed', userSelect: 'none' }}
+        sx={{ flex: 1, minHeight: 0, position: 'relative', outline: 'none', overflow: fit === 'actual' ? 'auto' : 'hidden', cursor: !canControl ? 'not-allowed' : showSecure || showLocalCursor ? 'default' : 'none', userSelect: 'none' }}
       >
         <Box
           component='video'
@@ -573,6 +616,28 @@ const Viewer = () => {
               Close
             </Button>
           </Stack>
+        )}
+
+        {/* The host is locked: its lock screen (Windows agent), or what to do about it. */}
+        {locked && session !== 'ended' && (
+          <Box sx={{ position: 'absolute', inset: 0, bgcolor: '#0d0e12', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {showSecure ? (
+              <Box component='img' ref={secureImg} src={secureUrl ?? undefined} alt='Remote lock screen' draggable={false} sx={{ width: '100%', height: '100%', objectFit: 'contain', userSelect: 'none', pointerEvents: 'none' }} />
+            ) : (
+              <Stack alignItems='center' spacing={1.5} sx={{ maxWidth: 520, textAlign: 'center', px: 3 }}>
+                <LockOutlined sx={{ fontSize: 42, color: 'rgba(255,255,255,.7)' }} />
+                <Typography sx={{ fontSize: 18, fontWeight: 600 }}>The remote computer is locked</Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,.7)', fontSize: 14 }}>
+                  {secureAgent
+                    ? 'Loading its lock screen…'
+                    : 'To see and unlock it from here, turn on "Lock screen access" on that computer once (Remote Desktop → Security, Windows, needs administrator approval). Until then someone there has to unlock it; the picture comes back by itself.'}
+                </Typography>
+              </Stack>
+            )}
+          </Box>
+        )}
+        {showSecure && (
+          <Chip size='small' icon={<LockOutlined />} label='Lock screen — type the Windows password or PIN' sx={{ position: 'absolute', top: 10, left: 10, bgcolor: 'rgba(0,0,0,.65)', color: '#fff' }} />
         )}
 
         {showStats && stats && (
@@ -668,6 +733,15 @@ const Viewer = () => {
         ))}
       </Menu>
       <Menu anchorEl={menu?.anchor} open={menu?.kind === 'keys'} onClose={() => setMenu(null)}>
+        <MenuItem
+          disabled={!locked || !secureAgent}
+          onClick={() => {
+            setMenu(null)
+            void api.viewer.sendCtrlAltDel()
+          }}
+        >
+          <ListItemText primary='Ctrl + Alt + Delete' secondary={locked && secureAgent ? 'On the lock screen' : 'Only on a locked Windows computer with lock screen access'} />
+        </MenuItem>
         {SPECIAL_KEYS.map(k => (
           <MenuItem
             key={k.label}

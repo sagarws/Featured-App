@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { clipboard, Notification, screen, type BrowserWindow } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
-import { EXPIRY_WARNING_MS, MAX_CLIPBOARD_CHARS, RESUME_WINDOW_MS } from '@shared/constants/remote'
+import { EXPIRY_WARNING_MS, KEEPALIVE_MS, LINK_TIMEOUT_MS, MAX_CLIPBOARD_CHARS, RESUME_WINDOW_MS } from '@shared/constants/remote'
 import type { HistoryEvent, InputEvent, QualityPreset, RemoteDisplay, RemotePermission, RemoteSessionInfo, SessionMinutes, SignalMessage } from '@shared/types/remote'
 import { minutesLabel, QUALITY_PRESETS } from '@shared/utils/remote'
 import { armDisplayRequest, listDisplays } from '../recorder/capture'
@@ -46,6 +46,12 @@ export class HostSession {
   channel: Channel | null = null
   engine: BrowserWindow | null = null
   endReason: string | null = null
+  /** This computer is locked: input and pictures go through the lock-screen agent. */
+  locked = false
+  private secureTimer: NodeJS.Timeout | null = null
+  private secureBusy = false
+  private lastSecureHash = ''
+  private lastSecureAt = 0
   private ticker: NodeJS.Timeout | null = null
   private resumeTimer: NodeJS.Timeout | null = null
   private lastClipboard = ''
@@ -78,7 +84,9 @@ export class HostSession {
       clipboard: settings.clipboardSync,
       fileTransfer: settings.incomingFiles !== 'off',
       hostPlatform: process.platform,
-      inputProblem: this.inputProblem()
+      inputProblem: this.inputProblem(),
+      locked: this.locked,
+      secureAgent: this.ctx.secure.available()
     }
   }
 
@@ -108,6 +116,8 @@ export class HostSession {
     this.ticker = setInterval(() => this.tick(), 1000)
     this.ctx.history({ direction: 'incoming', event: 'connected', peerId: this.peer.id, peerName: this.peer.name, address: this.peer.address, detail: `${this.method === 'password' ? 'Unattended' : 'Accepted'} · ${this.permission === 'control' ? 'full control' : 'view only'} · ${this.expiresAt ? minutesLabel(Math.round((this.expiresAt - this.startedAt) / 60_000) as SessionMinutes) : 'unlimited'}` })
     void this.ctx.injector.check().then(() => this.sendInputStatus())
+    // Connecting to a computer that is already locked.
+    if (this.ctx.hostLocked()) this.setLocked(true)
     this.ctx.notify()
   }
 
@@ -158,6 +168,10 @@ export class HostSession {
         this.engine?.webContents.send(REMOTE_IPC.engineCommand, { type: 'display', id })
         return
       }
+      case 'secure-sas':
+        // Ctrl+Alt+Delete on the lock screen (only there, only with control).
+        if (this.locked && this.canControl()) this.ctx.secure.sendCtrlAltDel()
+        return
       case 'clipboard': {
         // Writing this computer's clipboard is a form of control: full-control sessions only.
         if (!this.ctx.settings().clipboardSync || !this.canControl()) return
@@ -209,6 +223,11 @@ export class HostSession {
   /** Input from the capture window's data channel. Dropped unless control is allowed right now. */
   inject(events: InputEvent[]): void {
     if (!this.canControl()) return
+    if (this.locked) {
+      // The normal helper cannot reach the lock screen; the SYSTEM agent can (Windows).
+      if (this.ctx.secure.available()) for (const event of events) this.ctx.secure.inject(event)
+      return
+    }
     const display = screen.getAllDisplays().find(d => String(d.id) === this.displayId) ?? screen.getPrimaryDisplay()
     for (const event of events) this.ctx.injector.inject(event, display)
   }
@@ -230,9 +249,9 @@ export class HostSession {
       }
     }
     if (this.state !== 'active' || !this.channel) return
-    // Keepalive: a silent link for 20 s is a lost link.
-    if (this.ticks % 5 === 0) this.send({ t: 'ping' })
-    if (now - this.channel.lastReceivedAt > 20_000) {
+    // Keepalive: is the controller still there? Silence = it closed, crashed, slept or lost the network.
+    if ((this.ticks * 1000) % KEEPALIVE_MS === 0) this.send({ t: 'ping' })
+    if (now - this.channel.lastReceivedAt > LINK_TIMEOUT_MS) {
       this.channel.close('No answer from the viewer.')
       return
     }
@@ -295,6 +314,49 @@ export class HostSession {
     this.ctx.notify()
   }
 
+  // ── lock screen ──
+
+  /** The host's screen was locked or unlocked. */
+  setLocked(locked: boolean): void {
+    if (this.state === 'ended' || locked === this.locked) return
+    this.locked = locked
+    this.ctx.injector.releaseAll()
+    this.ctx.secure.releaseAll()
+    this.lastSecureHash = ''
+    this.send({ t: 'locked', locked, secure: this.ctx.secure.available() })
+    if (locked) {
+      if (!this.secureTimer) this.secureTimer = setInterval(() => void this.pumpSecureFrame(), 250)
+    } else {
+      if (this.secureTimer) clearInterval(this.secureTimer)
+      this.secureTimer = null
+      // Screen capture often stops while Windows shows the lock screen: start it again.
+      this.recapture()
+    }
+    this.ctx.notify()
+  }
+
+  /** Ask the capture window to restart screen capture (after unlock, resume, display change). */
+  recapture(): void {
+    if (this.state !== 'ended') this.engine?.webContents.send(REMOTE_IPC.engineCommand, { type: 'recapture' })
+  }
+
+  /** A picture of the lock screen, about 4 a second, only when it changed (or every 2 s). */
+  private async pumpSecureFrame(): Promise<void> {
+    if (this.secureBusy || !this.locked || this.state !== 'active' || !this.channel || !this.ctx.secure.available()) return
+    this.secureBusy = true
+    try {
+      const frame = await this.ctx.secure.frame(1920, 60)
+      if (!frame || !this.locked || !this.channel) return
+      const hash = createHash('sha1').update(frame.jpeg).digest('hex')
+      if (hash === this.lastSecureHash && Date.now() - this.lastSecureAt < 2000) return
+      this.lastSecureHash = hash
+      this.lastSecureAt = Date.now()
+      this.channel.send({ t: 'secure-frame', width: frame.width, height: frame.height }, frame.jpeg)
+    } finally {
+      this.secureBusy = false
+    }
+  }
+
   controlSettingChanged(): void {
     if (!this.canControl()) this.ctx.injector.releaseAll()
     this.sendInputStatus()
@@ -306,7 +368,10 @@ export class HostSession {
     this.endReason = reason
     if (this.ticker) clearInterval(this.ticker)
     if (this.resumeTimer) clearTimeout(this.resumeTimer)
+    if (this.secureTimer) clearInterval(this.secureTimer)
+    this.secureTimer = null
     this.ctx.injector.releaseAll()
+    if (this.locked) this.ctx.secure.releaseAll()
     this.channel?.closeAfter({ t: 'end', reason })
     this.channel = null
     const engine = this.engine
@@ -339,6 +404,7 @@ export class HostSession {
       inputProblem: this.permission === 'control' ? this.inputProblem() : null,
       clipboard: settings.clipboardSync,
       fileTransfer: settings.incomingFiles !== 'off',
+      locked: this.locked,
       ...(this.endReason ? { endReason: this.endReason } : {})
     }
   }

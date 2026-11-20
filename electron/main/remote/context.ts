@@ -1,6 +1,7 @@
 import type { HistoryEntry, IceServer, RemoteSettings } from '@shared/types/remote'
 import type { HostSession } from './hostSession'
 import type { InputInjector } from './input/injector'
+import type { SecureDesktop } from './secureDesktop'
 import type { TransferLink, Transfers } from './transfers'
 import type { ViewerSession } from './viewerSession'
 
@@ -11,6 +12,10 @@ export interface RemoteContext {
   notify: () => void
   history: (entry: Omit<HistoryEntry, 'at'>) => void
   injector: InputInjector
+  /** Windows lock-screen agent. */
+  secure: SecureDesktop
+  /** Is this computer's screen locked right now? */
+  hostLocked: () => boolean
   transfers: Transfers
   transferLink: (session: HostSession | ViewerSession) => TransferLink
   hostSessionEnded: (session: HostSession) => void

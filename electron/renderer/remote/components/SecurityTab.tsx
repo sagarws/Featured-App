@@ -12,6 +12,15 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
   const api = window.printAgent.remote
   const s = status.settings
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [agentBusy, setAgentBusy] = useState(false)
+
+  const agent = async (install: boolean) => {
+    setAgentBusy(true)
+    const r = await (install ? api.installSecureAgent() : api.removeSecureAgent())
+    setAgentBusy(false)
+    if (!r.ok) toast.error(r.error)
+    else toast.success(install ? 'Lock screen access is on' : 'Lock screen access removed')
+  }
 
   const act = async (call: Promise<{ ok: boolean; error?: string }>, done?: string) => {
     const r = await call
@@ -67,6 +76,37 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
         <Typography variant='caption' color='text.secondary' sx={{ pt: 1.5 }}>
           Wrong passwords are throttled: after 3 failures a device waits 30 s, doubling up to 15 min, and more than 20 failures a minute from anywhere pause all attempts for a minute.
         </Typography>
+      </Section>
+
+      <Section
+        title='Lock screen access (Windows)'
+        subtitle='Lets a full-control session see this computer’s lock screen and unlock it (type the Windows password or PIN), and keeps the picture working when another remote tool locks the screen — without AnyDesk.'
+      >
+        {status.secureAgent === 'unsupported' ? (
+          <Typography variant='body2' color='text.secondary' sx={{ py: 1.5 }}>
+            Windows only. macOS and Linux do not allow remote apps to use the lock screen; the viewer shows that the computer is locked, and the picture returns after someone unlocks it.
+          </Typography>
+        ) : (
+          <>
+            <Row
+              title={status.secureAgent === 'running' ? 'On' : 'Off'}
+              hint='Installs a small SYSTEM agent (like AnyDesk’s service) once, with an administrator prompt. It acts only while this computer is locked and never on UAC prompts or an unlocked desktop.'
+            >
+              {status.secureAgent === 'running' ? (
+                <Button size='small' color='error' disabled={agentBusy} onClick={() => void agent(false)}>
+                  Remove
+                </Button>
+              ) : (
+                <Button size='small' variant='contained' disabled={agentBusy} onClick={() => void agent(true)}>
+                  {agentBusy ? 'Waiting for approval…' : 'Turn on'}
+                </Button>
+              )}
+            </Row>
+            <Typography variant='caption' color='text.secondary' sx={{ pt: 1 }}>
+              Works once someone has signed in to Windows (the app runs in that session). After a restart, sign in once — or enable automatic sign-in — before connecting.
+            </Typography>
+          </>
+        )}
       </Section>
 
       <Section

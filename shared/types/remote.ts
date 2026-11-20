@@ -175,6 +175,8 @@ export interface RemoteSessionInfo {
   inputProblem: string | null
   clipboard: boolean
   fileTransfer: boolean
+  /** The host's screen is locked (Windows / macOS lock screen). */
+  locked: boolean
   endReason?: string
 }
 
@@ -240,6 +242,8 @@ export interface RemoteStatus {
   transfers: FileTransferInfo[]
   permissions: PermissionStatus
   encryption: boolean
+  /** Windows lock-screen agent on THIS computer (see native/win/RemoteSecureAgent.cs). */
+  secureAgent: 'unsupported' | 'not-installed' | 'running'
 }
 
 export interface ConnectRequest {
@@ -268,7 +272,12 @@ export interface ViewerConfig {
   clipboard: boolean
   fileTransfer: boolean
   hardwareAcceleration: boolean
+  /** The viewer's codec choice: its answer decides what the host sends. */
+  codec: CodecPreference
   iceServers: IceServer[]
+  /** The host is locked right now, and whether it can show / unlock its lock screen. */
+  locked: boolean
+  secureAgent: boolean
 }
 
 /** Handed to the host's hidden capture window. */

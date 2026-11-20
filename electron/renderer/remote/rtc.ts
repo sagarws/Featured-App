@@ -2,10 +2,23 @@ import type { CodecPreference, SignalMessage, ViewerStats } from '@shared/types/
 
 /** Shared WebRTC helpers for the host engine and the viewer. */
 
-/** Order the codecs: the preferred one first, the rest kept as fallbacks (RTX/RED/FEC stay in). */
+/**
+ * Order the codecs: the preferred one first, the rest kept as fallbacks (RTX/RED/FEC stay in).
+ * Applied on both ends: the viewer's answer decides what the host sends.
+ *
+ * Newer Chromium refuses a list containing codecs outside the set it allows for
+ * that transceiver (receiver capabilities, sender capabilities, or both,
+ * depending on version and direction) — and then silently keeps its own order,
+ * which picked software AV1 on a real Windows host. So the same order is tried
+ * on the intersection, then each list, until one is accepted.
+ */
 export const preferCodecs = (transceiver: RTCRtpTransceiver, codec: CodecPreference, hardware: boolean): string => {
-  const caps = RTCRtpSender.getCapabilities('video')
-  if (!caps || typeof transceiver.setCodecPreferences !== 'function') return 'default'
+  if (typeof transceiver.setCodecPreferences !== 'function') return 'default'
+  const send = RTCRtpSender.getCapabilities('video')?.codecs ?? []
+  const receive = RTCRtpReceiver.getCapabilities('video')?.codecs ?? []
+  const key = (c: RTCRtpCodec): string => `${c.mimeType}|${c.clockRate}|${c.sdpFmtpLine ?? ''}`
+  const sendKeys = new Set(send.map(key))
+  const both = receive.filter(c => sendKeys.has(key(c)))
   const order =
     codec === 'h264'
       ? ['video/H264', 'video/VP9', 'video/VP8']
@@ -23,13 +36,17 @@ export const preferCodecs = (transceiver: RTCRtpTransceiver, codec: CodecPrefere
     const fmtp = c.sdpFmtpLine ?? ''
     return index * 10 + (fmtp.includes('packetization-mode=1') ? 0 : 2) + (fmtp.includes('profile-level-id=64') ? 0 : 1)
   }
-  const sorted = [...caps.codecs].sort((a, b) => rank(a) - rank(b))
-  try {
-    transceiver.setCodecPreferences(sorted)
-    return sorted[0]?.mimeType ?? 'default'
-  } catch {
-    return 'default'
+  for (const list of [both, receive, send]) {
+    if (!list.length) continue
+    const sorted = [...list].sort((a, b) => rank(a) - rank(b))
+    try {
+      transceiver.setCodecPreferences(sorted)
+      return sorted[0]?.mimeType ?? 'default'
+    } catch {
+      // try the next list
+    }
   }
+  return 'default'
 }
 
 export const candidateSignal = (c: RTCIceCandidate): SignalMessage => ({ type: 'candidate', candidate: c.candidate, sdpMid: c.sdpMid, sdpMLineIndex: c.sdpMLineIndex })

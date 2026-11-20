@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { createServer, type Server, type Socket } from 'node:net'
-import { app, dialog, Notification, screen, type BrowserWindow, type WebContents } from 'electron'
+import { app, dialog, Notification, powerMonitor, powerSaveBlocker, screen, type BrowserWindow, type WebContents } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
 import type {
   ConnectRequest,
@@ -27,6 +27,7 @@ import { dial, routeLabel, type Route } from './dial'
 import { Discovery } from './discovery'
 import { HostSession } from './hostSession'
 import { InputInjector } from './input/injector'
+import { SecureDesktop } from './secureDesktop'
 import * as store from './store'
 import { Transfers, type TransferLink } from './transfers'
 import { ViewerSession } from './viewerSession'
@@ -48,6 +49,11 @@ const attempts = new Map<string, AbortController>()
 const limiter = new AuthLimiter()
 const requestCounter = new WindowCounter(3, 60_000)
 const injector = new InputInjector()
+const secure = new SecureDesktop()
+/** This computer's screen is locked (OS events, confirmed by the Windows agent when installed). */
+let hostLocked = false
+let lockPoll: NodeJS.Timeout | null = null
+let awakeBlocker: number | null = null
 let server: Server | null = null
 let serverStatus: ServerStatus = { listening: false, port: 0, error: null, relay: 'off', relayError: null }
 let relayHost: RelayHost | null = null
@@ -99,6 +105,8 @@ const ctx: RemoteContext = {
   notify: () => notify(),
   history,
   injector,
+  secure,
+  hostLocked: () => hostLocked,
   transfers,
   transferLink,
   hostSessionEnded: session => {
@@ -135,7 +143,8 @@ export const status = (): RemoteStatus => {
     blocked: store.blockedDevices(),
     transfers: transfers.list(),
     permissions,
-    encryption: store.encryptionAvailable()
+    encryption: store.encryptionAvailable(),
+    secureAgent: secure.agentState()
   }
 }
 
@@ -168,6 +177,13 @@ const refreshPermissions = async (): Promise<void> => {
 
 const updateHostBar = (): void => {
   const live = [...hostSessions.values()].some(s => s.state !== 'ended')
+  // While shared, the display must not sleep (and the screen saver must not lock it):
+  // a sleeping display stops screen capture.
+  if (live && awakeBlocker === null) awakeBlocker = powerSaveBlocker.start('prevent-display-sleep')
+  if (!live && awakeBlocker !== null) {
+    powerSaveBlocker.stop(awakeBlocker)
+    awakeBlocker = null
+  }
   if (live && (!hostBar || hostBar.isDestroyed())) {
     hostBar = createHostBarWindow()
     hostBar.on('closed', () => (hostBar = null))
@@ -242,7 +258,7 @@ const policy: HostPolicy = {
   identity: () => store.localIdentity(),
   attended: () => settings().enabled,
   unattended: unattendedSecret,
-  busy: () => [...hostSessions.values()].some(s => s.state !== 'ended'),
+  busy: peerId => [...hostSessions.values()].some(s => s.state !== 'ended' && s.peer.id !== peerId),
   isBlocked: id => store.isBlocked(id),
   canShareScreen: () => {
     const state = screenPermission()
@@ -252,6 +268,11 @@ const policy: HostPolicy = {
   requests: requestCounter,
   approve,
   grant: session => {
+    // The same controller connecting again (its app was closed or crashed, or the network dropped):
+    // its identity is proven by the handshake, so the stale session gives way at once.
+    for (const old of hostSessions.values()) {
+      if (old.state !== 'ended' && old.peer.id === session.peer.id) old.end('Replaced by a new connection from the same computer.')
+    }
     const host = new HostSession(ctx, session.peer, session.method, session.permission, session.minutes, session.channel)
     hostSessions.set(host.id, host)
     if (session.method === 'password') store.recordAuthorized(session.peer)
@@ -652,6 +673,46 @@ export const diagnostics = async (): Promise<Record<string, unknown>> => {
   }
 }
 
+// ── lock screen ─────────────────────────────────────────────────────────────
+
+const setHostLocked = (locked: boolean): void => {
+  if (locked === hostLocked) return
+  hostLocked = locked
+  logger.info(`[remote] screen ${locked ? 'locked' : 'unlocked'}`)
+  for (const s of hostSessions.values()) s.setLocked(locked)
+  notify()
+}
+
+const recaptureAll = (): void => {
+  for (const s of hostSessions.values()) s.recapture()
+}
+
+let recaptureTimer: NodeJS.Timeout | null = null
+const recaptureSoon = (): void => {
+  if (recaptureTimer) clearTimeout(recaptureTimer)
+  recaptureTimer = setTimeout(recaptureAll, 1000)
+}
+
+/** The Windows agent knows the real lock state (also when the app started while locked). */
+const pollAgent = async (): Promise<void> => {
+  const before = secure.agentState()
+  const { locked } = await secure.refresh()
+  if (locked !== null) setHostLocked(locked)
+  if (secure.agentState() !== before) notify()
+}
+
+export const installSecureAgent = async (): Promise<void> => {
+  await secure.install()
+  history({ direction: 'incoming', event: 'permission', peerId: '', peerName: '', address: '', detail: 'Lock screen access (Windows agent) installed.' })
+  notify()
+}
+
+export const removeSecureAgent = async (): Promise<void> => {
+  await secure.uninstall()
+  history({ direction: 'incoming', event: 'permission', peerId: '', peerName: '', address: '', detail: 'Lock screen access (Windows agent) removed.' })
+  notify()
+}
+
 export const requestInputPermission = (): void => {
   injector.requestPermission()
   setTimeout(() => void refreshPermissions(), 1500)
@@ -678,10 +739,20 @@ export const startRemoteDesktop = (): void => {
   void refreshPermissions()
   screen.on('display-added', notifyDisplays)
   screen.on('display-removed', notifyDisplays)
+  // Another remote tool closing, a resolution change, sleep / wake: capture may have stopped.
+  screen.on('display-metrics-changed', recaptureSoon)
+  powerMonitor.on('resume', recaptureSoon)
+  powerMonitor.on('lock-screen', () => setHostLocked(true))
+  powerMonitor.on('unlock-screen', () => setHostLocked(false))
+  if (process.platform === 'win32') {
+    void pollAgent()
+    lockPoll = setInterval(() => void pollAgent(), 2000)
+  }
 }
 
 const notifyDisplays = (): void => {
   for (const s of hostSessions.values()) if (s.state === 'active') s.engineState({ kind: 'display', id: s.displayId })
+  recaptureSoon()
 }
 
 export const stopRemoteDesktop = (): void => {
@@ -692,4 +763,8 @@ export const stopRemoteDesktop = (): void => {
   discovery?.stop()
   stopServer()
   injector.stop()
+  if (lockPoll) clearInterval(lockPoll)
+  secure.close()
+  if (awakeBlocker !== null) powerSaveBlocker.stop(awakeBlocker)
+  awakeBlocker = null
 }

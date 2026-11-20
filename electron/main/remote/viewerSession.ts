@@ -1,6 +1,6 @@
 import { clipboard, type BrowserWindow } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
-import { MAX_CLIPBOARD_CHARS, RESUME_WINDOW_MS } from '@shared/constants/remote'
+import { KEEPALIVE_MS, LINK_TIMEOUT_MS, MAX_CLIPBOARD_CHARS, RESUME_WINDOW_MS } from '@shared/constants/remote'
 import type { QualityPreset, QualityPriority, RemoteDisplay, RemotePermission, RemoteSessionInfo, SignalMessage, ViewerConfig } from '@shared/types/remote'
 import type { Channel, Received, WireMessage } from './core/channel'
 import { runClientHandshake, type HostInfo, type Granted } from './core/handshake'
@@ -46,6 +46,9 @@ export class ViewerSession {
   clipboardAllowed: boolean
   fileTransfer: boolean
   inputProblem: string | null
+  /** The host is locked; and whether its lock-screen agent can show / unlock it. */
+  locked: boolean
+  secureAgent: boolean
   window: BrowserWindow | null = null
   endReason: string | null = null
   /** The remote area has keyboard focus: intercept shortcuts for it. */
@@ -76,6 +79,8 @@ export class ViewerSession {
     this.clipboardAllowed = granted.raw['clipboard'] === true
     this.fileTransfer = granted.raw['fileTransfer'] === true
     this.inputProblem = typeof granted.raw['inputProblem'] === 'string' ? granted.raw['inputProblem'] : null
+    this.locked = granted.raw['locked'] === true
+    this.secureAgent = granted.raw['secureAgent'] === true
     const settings = ctx.settings()
     this.quality = settings.defaultQuality
     this.priority = settings.priority
@@ -144,7 +149,10 @@ export class ViewerSession {
       clipboard: this.clipboardAllowed && settings.clipboardSync,
       fileTransfer: this.fileTransfer,
       hardwareAcceleration: settings.hardwareAcceleration,
-      iceServers: this.ctx.iceServers()
+      codec: settings.codec,
+      iceServers: this.ctx.iceServers(),
+      locked: this.locked,
+      secureAgent: this.secureAgent
     }
   }
 
@@ -206,6 +214,20 @@ export class ViewerSession {
         if (typeof msg['current'] === 'string') this.displayId = msg['current']
         this.event({ type: 'displays', displays: this.displays, current: this.displayId })
         return
+      case 'locked':
+        this.locked = msg['locked'] === true
+        this.secureAgent = msg['secure'] === true
+        this.event({ type: 'locked', locked: this.locked, secure: this.secureAgent })
+        this.ctx.notify()
+        return
+      case 'secure-frame': {
+        const width = Number(msg['width'])
+        const height = Number(msg['height'])
+        // A JPEG of the host's lock screen; shown over the (stalled) video.
+        if (!binary || binary.length > 4 * 1024 * 1024 || !(width > 0) || !(height > 0)) return
+        if (this.window && !this.window.isDestroyed()) this.window.webContents.send(REMOTE_IPC.viewerSecureFrame, { width, height, jpeg: new Uint8Array(binary) })
+        return
+      }
       case 'notice':
         this.event({ type: 'notice', message: (typeof msg['message'] === 'string' ? msg['message'] : '').slice(0, 300) })
         return
@@ -254,6 +276,11 @@ export class ViewerSession {
     if (this.displays.some(d => d.id === id)) this.send({ t: 'display', id })
   }
 
+  /** Ctrl+Alt+Delete on the host's lock screen. */
+  sendCtrlAltDel(): void {
+    if (this.permission === 'control' && this.locked) this.send({ t: 'secure-sas' })
+  }
+
   /** Push this computer's clipboard to the host now. */
   sendClipboard(): boolean {
     if (!this.clipboardAllowed || this.permission !== 'control') return false
@@ -266,8 +293,8 @@ export class ViewerSession {
   private tick(): void {
     if (this.state !== 'active' || !this.channel) return
     this.ticks++
-    if (this.ticks % 5 === 0) this.send({ t: 'ping' })
-    if (Date.now() - this.channel.lastReceivedAt > 20_000) {
+    if ((this.ticks * 1000) % KEEPALIVE_MS === 0) this.send({ t: 'ping' })
+    if (Date.now() - this.channel.lastReceivedAt > LINK_TIMEOUT_MS) {
       this.channel.close('No answer from the other computer.')
       return
     }
@@ -308,9 +335,12 @@ export class ViewerSession {
         this.permission = result.granted.permission
         this.expiresAt = result.granted.expiresInMs === null ? null : Date.now() + result.granted.expiresInMs
         this.resumeToken = result.granted.resumeToken
+        this.locked = result.granted.raw['locked'] === true
+        this.secureAgent = result.granted.raw['secureAgent'] === true
         this.state = 'active'
         this.attach(result.channel)
         this.event({ type: 'reconnected', permission: this.permission, expiresAt: this.expiresAt })
+        this.event({ type: 'locked', locked: this.locked, secure: this.secureAgent })
         this.ctx.history({ direction: 'outgoing', event: 'reconnected', peerId: this.host.id, peerName: this.host.name, address: this.host.address, detail: '' })
         this.ctx.notify()
         return
@@ -365,6 +395,7 @@ export class ViewerSession {
       inputProblem: this.inputProblem,
       clipboard: this.clipboardAllowed,
       fileTransfer: this.fileTransfer,
+      locked: this.locked,
       ...(this.endReason ? { endReason: this.endReason } : {})
     }
   }
