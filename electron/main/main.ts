@@ -8,13 +8,14 @@ import { setPrinterSource, startPrinterMonitor, stopPrinterMonitor } from './pri
 import { startServer, stopServer } from './server'
 import { getSettings } from './settings'
 import { snapshot, subscribe } from './state'
-import { createTray, destroyTray, updateTray } from './tray'
+import { createTray, destroyTray, setTrayVisible, updateTray } from './tray'
 import { createWindow, markQuitting, showWindow } from './window'
 import { enableCaptureFeatures, registerDisplayMediaHandler } from './recorder/capture'
 import { registerRecorderIpc } from './recorder/ipc'
 import { markInterruptedSessions, registerMediaProtocol, registerMediaScheme } from './recorder/library'
 import { hasActiveRecording, shutdownRecorder } from './recorder/session'
 import { registerTranscriberIpc } from './transcriber/ipc'
+import { registerScreenshots } from './screenshot/ipc'
 import { loadTranscripts, shutdownTranscriber } from './transcriber/service'
 
 app.setAppUserModelId(APP_ID)
@@ -62,6 +63,8 @@ if (!app.requestSingleInstanceLock()) {
     // the first packaged run registers itself here.
     applyOpenAtLogin(getSettings().openAtLogin)
 
+    // Screenshots: shortcuts, IPC, and whether the menu-bar icon shows (before the tray is made).
+    registerScreenshots(setTrayVisible)
     createTray(snapshot(), trayActions)
     const unsubscribe = subscribe(state => {
       updateTray(state, trayActions)

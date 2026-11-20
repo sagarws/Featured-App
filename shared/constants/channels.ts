@@ -83,3 +83,53 @@ export const TRANSCRIBER_IPC = {
   /** Push: a job was added or removed. */
   listChanged: 'transcriber:list-changed'
 } as const
+
+/** Screenshots — see electron/main/screenshot. */
+export const SCREENSHOT_IPC = {
+  // The Screenshots page.
+  capture: 'screenshot:capture',
+  getSettings: 'screenshot:get-settings',
+  updateSettings: 'screenshot:update-settings',
+  environment: 'screenshot:environment',
+  chooseFolder: 'screenshot:choose-folder',
+  resetFolder: 'screenshot:reset-folder',
+  openFolder: 'screenshot:open-folder',
+  openKeyboardSettings: 'screenshot:open-keyboard-settings',
+  openScreenPrivacy: 'screenshot:open-screen-privacy',
+  /** Pause global shortcuts while a shortcut field is recording keys. */
+  suspendHotkeys: 'screenshot:suspend-hotkeys',
+  listRecent: 'screenshot:list-recent',
+  openFile: 'screenshot:open-file',
+  revealFile: 'screenshot:reveal-file',
+  deleteFile: 'screenshot:delete-file',
+  copyFile: 'screenshot:copy-file',
+  testUpload: 'screenshot:test-upload',
+  googleConnect: 'screenshot:google-connect',
+  googleDisconnect: 'screenshot:google-disconnect',
+  /** Push: settings or hotkeys changed (from the tray, another window, a Google sign-in). */
+  changed: 'screenshot:changed',
+  /** Push: a file was saved or deleted in the screenshots folder. */
+  libraryChanged: 'screenshot:library-changed',
+
+  // Editor / thumbnail / pin windows.
+  getCapture: 'screenshot:get-capture',
+  exportImage: 'screenshot:export-image',
+  editorSettings: 'screenshot:editor-settings',
+  openEditor: 'screenshot:open-editor',
+  closeSelf: 'screenshot:close-self',
+  startDrag: 'screenshot:start-drag',
+  /** Push to the windows showing a capture: it was saved / uploaded. */
+  captureUpdated: 'screenshot:capture-updated',
+
+  // Area overlays.
+  overlayImage: 'screenshot:overlay-image',
+  overlayReady: 'screenshot:overlay-ready',
+  overlayStarted: 'screenshot:overlay-started',
+  overlayDone: 'screenshot:overlay-done',
+  /** Push to the other overlays: clear your selection. */
+  overlayReset: 'screenshot:overlay-reset',
+
+  // Window picker (Windows / Linux).
+  listWindows: 'screenshot:list-windows',
+  pickWindow: 'screenshot:pick-window'
+} as const

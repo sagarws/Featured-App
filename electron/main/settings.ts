@@ -3,7 +3,9 @@ import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import type { ThemeMode } from '@shared/types/agent'
 import type { RecorderSettings } from '@shared/types/recorder'
+import type { ScreenshotSettings } from '@shared/types/screenshot'
 import { sanitiseRecorderSettings } from '@shared/utils/recorder'
+import { sanitiseScreenshotSettings } from '@shared/utils/screenshot'
 import { normaliseOrigin } from '@shared/utils/origin'
 import { readDurableJson, writeDurableJson } from './durableJson'
 import { logger } from './logger'
@@ -23,6 +25,8 @@ export interface AgentSettings {
   notifications: boolean
   /** Screen / webcam / audio recording. */
   recorder: RecorderSettings
+  /** Screenshots. Keys and tokens are blank here: they live encrypted in screenshot-secrets.json. */
+  screenshot: ScreenshotSettings
 }
 
 const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system']
@@ -37,7 +41,8 @@ const defaults = (): AgentSettings => ({
   themeMode: 'system',
   blockOfflinePrinters: true,
   notifications: true,
-  recorder: sanitiseRecorderSettings(null)
+  recorder: sanitiseRecorderSettings(null),
+  screenshot: sanitiseScreenshotSettings(null)
 })
 
 let cached: AgentSettings | null = null
@@ -79,7 +84,8 @@ const sanitise = (raw: unknown): AgentSettings => {
     blockOfflinePrinters:
       typeof value.blockOfflinePrinters === 'boolean' ? value.blockOfflinePrinters : base.blockOfflinePrinters,
     notifications: typeof value.notifications === 'boolean' ? value.notifications : base.notifications,
-    recorder: sanitiseRecorderSettings(value.recorder)
+    recorder: sanitiseRecorderSettings(value.recorder),
+    screenshot: sanitiseScreenshotSettings(value.screenshot)
   }
 }
 

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import { IPC, RECORDER_IPC, TRANSCRIBER_IPC } from '@shared/constants/channels'
+import { IPC, RECORDER_IPC, SCREENSHOT_IPC, TRANSCRIBER_IPC } from '@shared/constants/channels'
 import type { AgentState, Result, ThemeMode } from '@shared/types/agent'
 import type {
   CaptureArea,
@@ -13,6 +13,19 @@ import type {
   StorageInfo,
   SystemAudioPermission
 } from '@shared/types/recorder'
+import type {
+  AreaPick,
+  CaptureImage,
+  CaptureInfo,
+  ExportAction,
+  ExportResult,
+  ScreenshotAction,
+  ScreenshotEnvironment,
+  ScreenshotFile,
+  ScreenshotSettings,
+  ThumbnailTimeout,
+  WindowChoice
+} from '@shared/types/screenshot'
 import type { TranscriptExportFormat, TranscriptJob, TranscriptLanguage, TranscriptModel, TranscriptModelInfo } from '@shared/types/transcriber'
 
 /** Subscribe to a push channel; returns the unsubscribe. */
@@ -118,6 +131,56 @@ const api = {
     exportFile: (id: string, format: TranscriptExportFormat): Promise<Result<string | null>> => ipcRenderer.invoke(TRANSCRIBER_IPC.exportFile, id, format),
     onJob: (listener: (job: TranscriptJob) => void): (() => void) => on(TRANSCRIBER_IPC.job, listener),
     onListChanged: (listener: () => void): (() => void) => on(TRANSCRIBER_IPC.listChanged, () => listener())
+  },
+
+  /** Screenshots — see electron/main/screenshot. */
+  screenshot: {
+    capture: (action: ScreenshotAction): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.capture, action),
+    getSettings: (): Promise<Result<ScreenshotSettings>> => ipcRenderer.invoke(SCREENSHOT_IPC.getSettings),
+    updateSettings: (patch: Partial<ScreenshotSettings>): Promise<Result<ScreenshotSettings>> => ipcRenderer.invoke(SCREENSHOT_IPC.updateSettings, patch),
+    environment: (): Promise<Result<ScreenshotEnvironment>> => ipcRenderer.invoke(SCREENSHOT_IPC.environment),
+    chooseFolder: (): Promise<Result<string | null>> => ipcRenderer.invoke(SCREENSHOT_IPC.chooseFolder),
+    resetFolder: (): Promise<Result<string>> => ipcRenderer.invoke(SCREENSHOT_IPC.resetFolder),
+    openFolder: (): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.openFolder),
+    openKeyboardSettings: (): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.openKeyboardSettings),
+    openScreenPrivacy: (): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.openScreenPrivacy),
+    suspendHotkeys: (pause: boolean): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.suspendHotkeys, pause),
+    listRecent: (): Promise<Result<ScreenshotFile[]>> => ipcRenderer.invoke(SCREENSHOT_IPC.listRecent),
+    openFile: (path: string): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.openFile, path),
+    revealFile: (path: string): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.revealFile, path),
+    copyFile: (path: string): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.copyFile, path),
+    deleteFile: (path: string): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.deleteFile, path),
+    testUpload: (): Promise<Result<string>> => ipcRenderer.invoke(SCREENSHOT_IPC.testUpload),
+    googleConnect: (): Promise<Result<{ email: string; name: string }>> => ipcRenderer.invoke(SCREENSHOT_IPC.googleConnect),
+    googleDisconnect: (): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.googleDisconnect),
+    onChanged: (listener: () => void): (() => void) => on(SCREENSHOT_IPC.changed, () => listener()),
+    onLibraryChanged: (listener: () => void): (() => void) => on(SCREENSHOT_IPC.libraryChanged, () => listener()),
+
+    /** Editor, thumbnail and pin windows. */
+    getCapture: (id: string): Promise<Result<CaptureImage | null>> => ipcRenderer.invoke(SCREENSHOT_IPC.getCapture, id),
+    editorSettings: (): Promise<
+      Result<{ preferActualSize: boolean; escCopy: boolean; escSave: boolean; thumbnailTimeout: ThumbnailTimeout; uploadReady: boolean; uploadProblem: string | null; platform: 'darwin' | 'win32' | 'linux' }>
+    > => ipcRenderer.invoke(SCREENSHOT_IPC.editorSettings),
+    /** `png` = the edited picture; omit to use the picture as captured. */
+    exportImage: (id: string, action: ExportAction, png?: Uint8Array): Promise<Result<ExportResult>> =>
+      ipcRenderer.invoke(SCREENSHOT_IPC.exportImage, id, action, png ?? null),
+    openEditor: (id: string): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.openEditor, id),
+    closeSelf: (): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.closeSelf),
+    startDrag: (id: string): void => ipcRenderer.send(SCREENSHOT_IPC.startDrag, id),
+    onCaptureUpdated: (listener: (info: CaptureInfo) => void): (() => void) => on(SCREENSHOT_IPC.captureUpdated, listener),
+
+    /** Area overlays. */
+    overlay: {
+      image: (displayId: string): Promise<Result<Uint8Array | null>> => ipcRenderer.invoke(SCREENSHOT_IPC.overlayImage, displayId),
+      ready: (): void => ipcRenderer.send(SCREENSHOT_IPC.overlayReady),
+      started: (): void => ipcRenderer.send(SCREENSHOT_IPC.overlayStarted),
+      done: (pick: AreaPick | null): void => ipcRenderer.send(SCREENSHOT_IPC.overlayDone, pick),
+      onReset: (listener: () => void): (() => void) => on(SCREENSHOT_IPC.overlayReset, () => listener())
+    },
+
+    /** Window picker (Windows / Linux). */
+    listWindows: (): Promise<Result<WindowChoice[]>> => ipcRenderer.invoke(SCREENSHOT_IPC.listWindows),
+    pickWindow: (id: string | null): Promise<Result> => ipcRenderer.invoke(SCREENSHOT_IPC.pickWindow, id)
   }
 }
 
