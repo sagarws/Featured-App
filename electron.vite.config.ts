@@ -11,7 +11,8 @@ const sharedAlias = { '@shared': resolve(__dirname, 'shared') }
  */
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // @noble/hashes (Remote Desktop's Argon2id) is ESM-only: bundle it into the CommonJS main build.
+    plugins: [externalizeDepsPlugin({ exclude: ['@noble/hashes'] })],
     resolve: { alias: { ...sharedAlias, '@main': resolve(__dirname, 'electron/main') } },
     build: {
       outDir: 'out/main',

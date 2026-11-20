@@ -39,6 +39,10 @@ win:
   # Transcripts: only this platform's speech engine binaries.
   files:
     - '!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**'
+  # Remote Desktop: keyboard/mouse helper (PowerShell + SendInput). Found at <resources>/native.
+  extraResources:
+    - from: native/win
+      to: native
   target:
     - nsis
   artifactName: Featured-App-${arch}-setup.${ext}
@@ -55,7 +59,8 @@ mac:
   # has no Intel (x64) Mac build, so Transcripts shows an error there.
   files:
     - '!node_modules/onnxruntime-node/bin/napi-v*/{win32,linux}/**'
-  # Recorder: checks/asks for the "System Audio Recording" permission
+  # Recorder: checks/asks for the "System Audio Recording" permission, and
+  # Remote Desktop: keyboard/mouse helper (remote-input, CoreGraphics events)
   # (scripts/build-native-mac.cjs). Found at <resources>/native.
   extraResources:
     - from: resources/native/mac
@@ -79,3 +84,8 @@ mac:
     NSAudioCaptureUsageDescription: Records the sound your computer plays (meetings, browser, apps) when you choose System audio.
 dmg:
   artifactName: Featured-App-${arch}.${ext}
+linux:
+  # Remote Desktop: keyboard/mouse helper (python3 + X11 XTEST). Found at <resources>/native.
+  extraResources:
+    - from: native/linux
+      to: native

@@ -4,8 +4,10 @@ import { app } from 'electron'
 import type { ThemeMode } from '@shared/types/agent'
 import type { RecorderSettings } from '@shared/types/recorder'
 import type { ScreenshotSettings } from '@shared/types/screenshot'
+import type { RemoteSettings } from '@shared/types/remote'
 import { sanitiseRecorderSettings } from '@shared/utils/recorder'
 import { sanitiseScreenshotSettings } from '@shared/utils/screenshot'
+import { sanitiseRemoteSettings } from '@shared/utils/remote'
 import { normaliseOrigin } from '@shared/utils/origin'
 import { readDurableJson, writeDurableJson } from './durableJson'
 import { logger } from './logger'
@@ -27,6 +29,8 @@ export interface AgentSettings {
   recorder: RecorderSettings
   /** Screenshots. Keys and tokens are blank here: they live encrypted in screenshot-secrets.json. */
   screenshot: ScreenshotSettings
+  /** Remote Desktop. The identity key and password verifier live encrypted in remote-secrets.json. */
+  remoteDesktop: RemoteSettings
 }
 
 const THEME_MODES: readonly ThemeMode[] = ['light', 'dark', 'system']
@@ -42,7 +46,8 @@ const defaults = (): AgentSettings => ({
   blockOfflinePrinters: true,
   notifications: true,
   recorder: sanitiseRecorderSettings(null),
-  screenshot: sanitiseScreenshotSettings(null)
+  screenshot: sanitiseScreenshotSettings(null),
+  remoteDesktop: sanitiseRemoteSettings(null)
 })
 
 let cached: AgentSettings | null = null
@@ -85,7 +90,8 @@ const sanitise = (raw: unknown): AgentSettings => {
       typeof value.blockOfflinePrinters === 'boolean' ? value.blockOfflinePrinters : base.blockOfflinePrinters,
     notifications: typeof value.notifications === 'boolean' ? value.notifications : base.notifications,
     recorder: sanitiseRecorderSettings(value.recorder),
-    screenshot: sanitiseScreenshotSettings(value.screenshot)
+    screenshot: sanitiseScreenshotSettings(value.screenshot),
+    remoteDesktop: sanitiseRemoteSettings(value.remoteDesktop)
   }
 }
 

@@ -20,7 +20,11 @@ const ROOT = join(__dirname, '..')
 const OUT = join(ROOT, 'resources', 'native', 'mac')
 const force = process.argv.includes('--force')
 
-const HELPERS = [{ name: 'audio-permission', source: 'native/mac/audio-permission.c', frameworks: ['CoreFoundation'] }]
+const HELPERS = [
+  { name: 'audio-permission', source: 'native/mac/audio-permission.c', frameworks: ['CoreFoundation'] },
+  // Remote Desktop: keyboard / mouse injection (CoreGraphics events).
+  { name: 'remote-input', source: 'native/mac/remote-input.c', frameworks: ['ApplicationServices', 'CoreFoundation'] }
+]
 
 mkdirSync(OUT, { recursive: true })
 for (const helper of HELPERS) {

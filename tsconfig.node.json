@@ -10,6 +10,7 @@
     "electron/preload/**/*.ts",
     "shared/**/*.ts",
     "tests/**/*.ts",
+    "tools/**/*.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"
   ]

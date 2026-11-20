@@ -8,7 +8,9 @@ import HomePage from './pages/HomePage'
 import SettingsPage from './pages/SettingsPage'
 import RecorderPage from './recorder/RecorderPage'
 import ScreenshotPage from './screenshot/ScreenshotPage'
+import FileSharePage from './fileshare/FileSharePage'
 import TranscriptPage from './transcriber/TranscriptPage'
+import RemoteDesktopPage from './remote/RemoteDesktopPage'
 import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
@@ -29,8 +31,10 @@ const App = ({ state }: { state: AgentState }) => {
         <Box component='main' sx={{ flex: 1, overflow: 'auto', px: 5, py: 5 }}>
           {page === 'home' && <HomePage state={state} query={query} />}
           {page === 'screenshots' && <ScreenshotPage state={state} />}
+          {page === 'fileshare' && <FileSharePage />}
           {page === 'recorder' && <RecorderPage />}
           {page === 'transcripts' && <TranscriptPage />}
+          {page === 'remote' && <RemoteDesktopPage />}
           {page === 'settings' && <SettingsPage state={state} />}
         </Box>
       </Box>

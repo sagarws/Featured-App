@@ -70,10 +70,8 @@ export const DEFAULT_S3: S3Config = {
 }
 
 export const DEFAULT_GOOGLE: GoogleDriveConfig = {
-  clientId: '',
-  clientSecret: '',
-  folderName: 'Featured App Screenshots',
-  makePublic: true,
+  folderId: '',
+  folderName: '',
   account: null
 }
 
@@ -103,19 +101,15 @@ const sanitiseS3 = (raw: unknown): S3Config => {
   }
 }
 
-const sanitiseAccount = (raw: unknown): GoogleDriveConfig['account'] => {
-  const v = obj(raw)
-  return typeof v['email'] === 'string' && v['email'] ? { email: text(v['email'], '', 320), name: text(v['name'], '', 256) } : null
-}
-
 const sanitiseGoogle = (raw: unknown): GoogleDriveConfig => {
   const v = obj(raw)
+  const folderId = text(v['folderId'], '', 128)
   return {
-    clientId: text(v['clientId'], '', 512),
-    clientSecret: text(v['clientSecret'], '', 512),
-    folderName: text(v['folderName'], DEFAULT_GOOGLE.folderName, 200) || DEFAULT_GOOGLE.folderName,
-    makePublic: bool(v['makePublic'], DEFAULT_GOOGLE.makePublic),
-    account: sanitiseAccount(v['account'])
+    // Drive ids are URL-safe base64-ish.
+    folderId: /^[A-Za-z0-9_-]*$/.test(folderId) ? folderId : '',
+    folderName: text(v['folderName'], '', 200),
+    // The account is the main process's to fill in, never stored here.
+    account: null
   }
 }
 
@@ -360,8 +354,7 @@ export const uploadProblem = (upload: UploadSettings): string | null => {
       return null
     }
     case 'google-drive':
-      if (!upload.google.clientId || !upload.google.clientSecret) return 'Enter the Google OAuth client ID and secret.'
-      if (!upload.google.account) return 'Connect your Google account in Screenshots → Uploading.'
+      if (!upload.google.account) return 'Connect your Google Drive in Screenshots → Uploading.'
       return null
     case 'api':
       if (!isHttpUrl(upload.api.url)) return 'Enter the URL of your upload API (https://…).'

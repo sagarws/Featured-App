@@ -25,6 +25,23 @@ interrupted sessions. Sidebar → **Recorder**. Needs ffmpeg (bundled in package
 builds; `brew install ffmpeg` for development). Details, OS support and the test
 checklist: [docs/RECORDER.md](docs/RECORDER.md).
 
+## Remote Desktop
+
+See and control another office computer running the app (or let it control
+this one) by **device ID** — attended (the other person clicks Allow) or
+unattended (Argon2id-protected password, off by default). Direct and end-to-end
+encrypted on the LAN, no external server; optional self-hosted relay + TURN for
+outside the office. Sessions default to 30 minutes (up to unlimited), enforced
+on the host, with an always-visible bar there to stop, limit or extend them.
+Sidebar → **Remote Desktop**. Architecture, security model, OS permissions,
+limitations, benchmarks and the test checklist:
+[docs/REMOTE_DESKTOP.md](docs/REMOTE_DESKTOP.md).
+
+```bash
+npm run remote:selftest   # end-to-end on one machine (the app connects to itself)
+npm run remote:relay      # optional relay for connections outside the office
+```
+
 ## API (loopback only)
 
 `GET /v1/status` → `{ ok, app, version, allowed, apiVersion: 2 }` answers any browser origin.

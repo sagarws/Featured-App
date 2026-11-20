@@ -1,9 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { Alert, Box, Button, Checkbox, CircularProgress, FormControlLabel, IconButton, Link, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material'
-import { Add, CheckCircle, Close } from '@mui/icons-material'
+import { Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Radio, RadioGroup, Stack, TextField, Typography } from '@mui/material'
+import { Add, Close } from '@mui/icons-material'
 import toast from 'react-hot-toast'
 import type { ApiConfig, GoogleDriveConfig, S3Config, ScreenshotEnvironment, UploadProvider, UploadSettings } from '@shared/types/screenshot'
 import { Choice, Code, Row, Section } from './ui'
+import { ConnectDriveCard, DriveAccountBar } from '../../google/ConnectDrive'
+import FolderTree, { folderPath, useDriveFolders } from '../../google/FolderTree'
+import { useGoogle } from '../../google/useGoogle'
 
 const PROVIDERS: { value: UploadProvider; label: string }[] = [
   { value: 'none', label: 'Off' },
@@ -77,89 +80,58 @@ const S3Form = ({ s3, set }: { s3: S3Config; set: (patch: Partial<S3Config>) => 
 
 // ── Google Drive ────────────────────────────────────────────────────────────
 
-const GoogleForm = ({ google, set, dirty, onConnected }: { google: GoogleDriveConfig; set: (patch: Partial<GoogleDriveConfig>) => void; dirty: boolean; onConnected: () => void }) => {
-  const api = window.printAgent.screenshot
-  const [connecting, setConnecting] = useState(false)
+const GoogleForm = ({ google, set }: { google: GoogleDriveConfig; set: (patch: Partial<GoogleDriveConfig>) => void }) => {
+  const g = useGoogle()
+  const [picking, setPicking] = useState(false)
+  const connected = !!g.status?.account
+  const folders = useDriveFolders(picking && connected)
+  const [choice, setChoice] = useState<{ id: string; name: string } | null>(null)
 
-  const connect = async () => {
-    setConnecting(true)
-    const r = await api.googleConnect()
-    setConnecting(false)
-    if (r.ok) {
-      toast.success(`Connected as ${r.value.email}`)
-      onConnected()
-    } else toast.error(r.error, { duration: 8000 })
+  if (!g.status) return null
+  if (!connected) {
+    return (
+      <Box sx={{ py: 2 }}>
+        <ConnectDriveCard status={g.status} onConnect={() => void g.connect()} onCancel={g.cancel} purpose='Screenshots are uploaded to a folder in your Drive and shared with a public link.' />
+      </Box>
+    )
   }
-  const disconnect = async () => {
-    const r = await api.googleDisconnect()
-    if (!r.ok) toast.error(r.error)
-    onConnected()
+
+  const pick = () => {
+    if (choice) set({ folderId: choice.id, folderName: folders.tree ? (folderPath(folders.tree, choice.id) ?? choice.name) : choice.name })
+    setPicking(false)
   }
 
   return (
     <>
-      <Box sx={{ py: 2 }}>
-        <Typography variant='body2' sx={{ fontWeight: 600, mb: 1 }}>
-          One-time setup (about 3 minutes)
-        </Typography>
-        <Box component='ol' sx={{ m: 0, pl: 2.5, '& li': { fontSize: 13, color: 'text.secondary', mb: 0.5 } }}>
-          <li>
-            Open{' '}
-            <Link href='https://console.cloud.google.com/apis/library/drive.googleapis.com' target='_blank' rel='noreferrer'>
-              Google Cloud Console → Google Drive API
-            </Link>{' '}
-            and click <b>Enable</b> (create a project if asked).
-          </li>
-          <li>
-            In{' '}
-            <Link href='https://console.cloud.google.com/auth/overview' target='_blank' rel='noreferrer'>
-              Google Auth Platform
-            </Link>
-            , set up the consent screen (External), and add your Google address under <b>Audience → Test users</b>.
-          </li>
-          <li>
-            Under{' '}
-            <Link href='https://console.cloud.google.com/apis/credentials' target='_blank' rel='noreferrer'>
-              Credentials
-            </Link>
-            , <b>Create credentials → OAuth client ID</b>, type <b>Desktop app</b>.
-          </li>
-          <li>Paste its Client ID and Client secret below, Save, then Connect.</li>
-        </Box>
-        <Typography variant='caption' color='text.secondary' component='div' sx={{ mt: 1 }}>
-          The app only asks for the <code>drive.file</code> scope: it can see and change the files it uploads, nothing else in your Drive. While the consent screen is in “Testing”, Google signs you out
-          after 7 days — publish it (no review is needed for this scope) to stay connected.
-        </Typography>
-      </Box>
-      <Field label='Client ID' value={google.clientId} onChange={clientId => set({ clientId })} placeholder='…apps.googleusercontent.com' />
-      <Field label='Client secret' type='password' value={google.clientSecret} onChange={clientSecret => set({ clientSecret })} helper='Stored encrypted on this computer.' />
-      <Field label='Folder in My Drive' value={google.folderName} onChange={folderName => set({ folderName })} helper='Created on the first upload.' />
-      <Row title='Sharing'>
-        <FormControlLabel control={<Checkbox size='small' checked={google.makePublic} onChange={e => set({ makePublic: e.target.checked })} />} label='Anyone with the link can view' sx={{ mr: 0 }} />
+      <Row title='Google account' hint='The same account File Share uses.' wide>
+        <DriveAccountBar status={g.status} onDisconnect={() => void g.disconnect()} onSwitch={() => void g.connect()} />
       </Row>
-      <Row title='Google account' hint={google.account ? `${google.account.name ? `${google.account.name} · ` : ''}${google.account.email}` : 'Opens your browser to sign in and allow access.'}>
-        {google.account ? (
-          <>
-            <CheckCircle color='success' fontSize='small' />
-            <Typography variant='body2' sx={{ mr: 1 }}>
-              Connected
-            </Typography>
-            <Button size='small' color='error' onClick={() => void disconnect()}>
-              Disconnect
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant='contained'
-            size='small'
-            disabled={connecting || dirty || !google.clientId || !google.clientSecret}
-            onClick={() => void connect()}
-            startIcon={connecting ? <CircularProgress size={14} color='inherit' /> : undefined}
-          >
-            {connecting ? 'Waiting for the browser…' : dirty ? 'Save first' : 'Connect Google account'}
+      <Row title='Save screenshots in' hint='A folder in your Google Drive. New folders can be made in the picker.' wide>
+        <Typography variant='body2' sx={{ fontWeight: 600 }}>
+          {google.folderName || 'Featured App'}
+        </Typography>
+        <Button size='small' variant='outlined' onClick={() => {
+          setChoice(google.folderId ? { id: google.folderId, name: google.folderName } : null)
+          setPicking(true)
+        }}>
+          Choose folder…
+        </Button>
+      </Row>
+      <Row title='Sharing' hint='Every uploaded screenshot is shared “Anyone with the link can view”, and that link is what you get.'>
+        <Chip size='small' color='success' variant='outlined' label='Public link' />
+      </Row>
+      <Dialog open={picking} onClose={() => setPicking(false)} fullWidth maxWidth='xs'>
+        <DialogTitle>Folder for screenshots</DialogTitle>
+        <DialogContent>
+          <FolderTree tree={folders.tree} error={folders.error} selected={choice?.id ?? ''} onSelect={folder => setChoice({ id: folder.id, name: folder.name })} onRefresh={() => void folders.refresh()} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPicking(false)}>Cancel</Button>
+          <Button variant='contained' disabled={!choice} onClick={pick}>
+            Use this folder
           </Button>
-        )}
-      </Row>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
@@ -281,10 +253,9 @@ interface Props {
   upload: UploadSettings
   env: ScreenshotEnvironment
   onSave: (upload: UploadSettings) => Promise<string | null>
-  onReload: () => void
 }
 
-const UploadTab = ({ upload, env, onSave, onReload }: Props) => {
+const UploadTab = ({ upload, env, onSave }: Props) => {
   const api = window.printAgent.screenshot
   const [draft, setDraft] = useState<UploadSettings>(upload)
   const [saving, setSaving] = useState(false)
@@ -354,7 +325,7 @@ const UploadTab = ({ upload, env, onSave, onReload }: Props) => {
         )}
         {draft.provider === 's3' && <S3Form s3={draft.s3} set={patch => setDraft(d => ({ ...d, s3: { ...d.s3, ...patch } }))} />}
         {draft.provider === 'google-drive' && (
-          <GoogleForm google={draft.google} dirty={dirty} set={patch => setDraft(d => ({ ...d, google: { ...d.google, ...patch } }))} onConnected={onReload} />
+          <GoogleForm google={draft.google} set={patch => setDraft(d => ({ ...d, google: { ...d.google, ...patch } }))} />
         )}
         {draft.provider === 'api' && <ApiForm api={draft.api} set={patch => setDraft(d => ({ ...d, api: { ...d.api, ...patch } }))} />}
       </Section>

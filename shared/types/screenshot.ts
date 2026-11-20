@@ -1,3 +1,5 @@
+import type { GoogleAccount } from './google'
+
 /*
  * Screenshots: capture, annotate, save, copy and upload. See
  * electron/main/screenshot for the main-process side and
@@ -46,16 +48,12 @@ export interface S3Config {
 }
 
 export interface GoogleDriveConfig {
-  /** From a Google Cloud OAuth client of type "Desktop app". */
-  clientId: string
-  /** Stored encrypted. Google treats a desktop client's secret as non-confidential. */
-  clientSecret: string
-  /** Folder in My Drive the screenshots go into (created on first upload). */
+  /** Drive folder screenshots go into; '' = the "Featured App" folder. Uploads are always shared "anyone with the link". */
+  folderId: string
+  /** Its name, for showing. */
   folderName: string
-  /** Give "Anyone with the link can view", so the copied link works for others. */
-  makePublic: boolean
-  /** The connected account, null when not connected. Set by the main process only. */
-  account: { email: string; name: string } | null
+  /** The connected Google account (File Share uses the same one). Filled in by the main process. */
+  account: GoogleAccount | null
 }
 
 export interface ApiHeader {

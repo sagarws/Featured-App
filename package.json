@@ -29,6 +29,8 @@
     "build:mac:local": "node scripts/build-native-mac.cjs --force && node scripts/fetch-ffmpeg.cjs mac-arm64 && npm run build && electron-builder --mac dmg --arm64 -c.mac.identity=- -c.mac.hardenedRuntime=false",
     "icons": "node scripts/build-icon-subset.cjs",
     "ffmpeg": "node scripts/fetch-ffmpeg.cjs",
+    "remote:selftest": "electron-vite build && node scripts/remote-selftest.cjs",
+    "remote:relay": "node tools/remote-relay/relay.ts",
     "build:linux": "node scripts/fetch-ffmpeg.cjs linux-x64 && npm run build && electron-builder --linux AppImage --x64"
   },
   "dependencies": {
@@ -43,6 +45,7 @@
     "@mui/lab": "7.0.1-beta.19",
     "@mui/material": "7.3.6",
     "@mui/utils": "7.3.6",
+    "@noble/hashes": "2.4.0",
     "pdf-to-printer": "5.8.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",

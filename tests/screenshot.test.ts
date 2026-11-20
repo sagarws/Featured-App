@@ -57,7 +57,10 @@ describe('screenshot settings', () => {
     expect(uploadProblem(s)).toMatch(/Choose where/)
     expect(uploadProblem({ ...s, provider: 'api' })).toMatch(/URL/)
     expect(uploadProblem({ ...s, provider: 'api', api: { ...s.api, url: 'https://a.example/upload' } })).toBeNull()
-    expect(uploadProblem({ ...s, provider: 'google-drive', google: { ...s.google, clientId: 'a', clientSecret: 'b' } })).toMatch(/Connect/)
+    expect(uploadProblem({ ...s, provider: 'google-drive' })).toMatch(/Connect/)
+    expect(uploadProblem({ ...s, provider: 'google-drive', google: { ...s.google, account: { email: 'a@b.c', name: 'A', picture: '' } } })).toBeNull()
+    // The account never comes from saved settings.
+    expect(sanitiseScreenshotSettings({ upload: { google: { account: { email: 'x@y.z' }, folderId: 'abc_-1' } } }).upload.google).toEqual({ folderId: 'abc_-1', folderName: '', account: null })
   })
 })
 

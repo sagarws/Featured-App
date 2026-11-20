@@ -27,7 +27,6 @@ import {
   windowPicked
 } from './service'
 import { testUpload } from './upload'
-import { cancelGoogleSignIn, connectGoogle, disconnectGoogle } from './upload/google'
 
 /** Every call must come from this app's own page (main window or a screenshot window). */
 const handle = <A extends unknown[], T>(channel: string, fn: (event: IpcMainInvokeEvent, ...args: A) => T | Promise<T>): void => {
@@ -155,21 +154,6 @@ export const registerScreenshots = (onTrayIcon: (visible: boolean) => void): voi
   handle(SCREENSHOT_IPC.copyFile, (_e, path: unknown) => copyFile(fileInFolder(path)))
   handle(SCREENSHOT_IPC.deleteFile, (_e, path: unknown) => deleteFile(fileInFolder(path)))
   handle(SCREENSHOT_IPC.testUpload, () => testUpload(getScreenshotSettings()))
-  handle(SCREENSHOT_IPC.googleConnect, async () => {
-    const account = await connectGoogle(getScreenshotSettings().upload.google)
-    // Back to the app from the browser.
-    const win = getWindow()
-    if (win) {
-      if (process.platform === 'darwin') app.focus({ steal: true })
-      win.show()
-      win.focus()
-    }
-    return account
-  })
-  handle(SCREENSHOT_IPC.googleDisconnect, async () => {
-    cancelGoogleSignIn()
-    await disconnectGoogle()
-  })
 
   // ── editor / thumbnail / pin ──
   handle(SCREENSHOT_IPC.getCapture, (_e, id: unknown) => captureFor(captureId(id)))

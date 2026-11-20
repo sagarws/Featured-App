@@ -109,7 +109,7 @@ const Recent = () => {
 /** Screenshots: capture buttons, recent files, and every screenshot setting. */
 const ScreenshotPage = ({ state }: { state: AgentState }) => {
   const api = window.printAgent.screenshot
-  const { settings, env, update, reload } = useScreenshotSettings()
+  const { settings, env, update } = useScreenshotSettings()
   const [tab, setTab] = useState<TabId>('capture')
   const mac = env?.platform === 'darwin'
 
@@ -195,7 +195,7 @@ const ScreenshotPage = ({ state }: { state: AgentState }) => {
 
       {settings && env && tab === 'general' && <GeneralTab settings={settings} env={env} openAtLogin={state.openAtLogin} packaged={state.packaged} onUpdate={set} />}
       {settings && env && tab === 'hotkeys' && <HotkeysTab settings={settings} env={env} onUpdate={set} />}
-      {settings && env && tab === 'upload' && <UploadTab upload={settings.upload} env={env} onSave={upload => update({ upload })} onReload={() => void reload()} />}
+      {settings && env && tab === 'upload' && <UploadTab upload={settings.upload} env={env} onSave={upload => update({ upload })} />}
       {settings && env && tab === 'advanced' && <AdvancedTab settings={settings} env={env} onUpdate={set} />}
     </Stack>
   )

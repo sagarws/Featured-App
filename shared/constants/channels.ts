@@ -104,8 +104,6 @@ export const SCREENSHOT_IPC = {
   deleteFile: 'screenshot:delete-file',
   copyFile: 'screenshot:copy-file',
   testUpload: 'screenshot:test-upload',
-  googleConnect: 'screenshot:google-connect',
-  googleDisconnect: 'screenshot:google-disconnect',
   /** Push: settings or hotkeys changed (from the tray, another window, a Google sign-in). */
   changed: 'screenshot:changed',
   /** Push: a file was saved or deleted in the screenshots folder. */
@@ -132,4 +130,107 @@ export const SCREENSHOT_IPC = {
   // Window picker (Windows / Linux).
   listWindows: 'screenshot:list-windows',
   pickWindow: 'screenshot:pick-window'
+} as const
+
+/** Remote Desktop — see electron/main/remote. */
+export const REMOTE_IPC = {
+  // The Remote Desktop page.
+  getStatus: 'remote:get-status',
+  history: 'remote:history',
+  clearHistory: 'remote:clear-history',
+  updateSettings: 'remote:update-settings',
+  setPassword: 'remote:set-password',
+  clearPassword: 'remote:clear-password',
+  setTurnCredential: 'remote:set-turn-credential',
+  connect: 'remote:connect',
+  cancelConnect: 'remote:cancel-connect',
+  disconnect: 'remote:disconnect',
+  focusViewer: 'remote:focus-viewer',
+  endIncoming: 'remote:end-incoming',
+  endAllIncoming: 'remote:end-all-incoming',
+  setSessionPermission: 'remote:set-session-permission',
+  extendSession: 'remote:extend-session',
+  refreshDiscovery: 'remote:refresh-discovery',
+  updateDevice: 'remote:update-device',
+  forgetDevice: 'remote:forget-device',
+  revokeDevice: 'remote:revoke-device',
+  revokeAll: 'remote:revoke-all',
+  unblockDevice: 'remote:unblock-device',
+  probe: 'remote:probe',
+  diagnostics: 'remote:diagnostics',
+  openPrivacy: 'remote:open-privacy',
+  requestAccessibility: 'remote:request-accessibility',
+  chooseTrustedFolder: 'remote:choose-trusted-folder',
+  sendFiles: 'remote:send-files',
+  cancelTransfer: 'remote:cancel-transfer',
+  /** Push: RemoteStatus, on every change. */
+  status: 'remote:status',
+  /** Push: progress of an outgoing connection attempt. */
+  connectProgress: 'remote:connect-progress',
+
+  // Incoming request window (#rd-request).
+  requestInfo: 'remote:request-info',
+  answerRequest: 'remote:answer-request',
+
+  // Viewer window (#rd-viewer).
+  viewerConfig: 'remote:viewer-config',
+  viewerReady: 'remote:viewer-ready',
+  viewerSignal: 'remote:viewer-signal',
+  viewerQuality: 'remote:viewer-quality',
+  viewerDisplay: 'remote:viewer-display',
+  viewerCapture: 'remote:viewer-capture',
+  viewerClipboard: 'remote:viewer-clipboard',
+  viewerRestart: 'remote:viewer-restart',
+  /** Push to the viewer: SignalMessage from the host. */
+  viewerSignalIn: 'remote:viewer-signal-in',
+  /** Push to the viewer: session events (timer, permission, displays, warning, end, clipboard). */
+  viewerEvent: 'remote:viewer-event',
+  /** Push to the viewer: a key the main process intercepted (shortcuts that would otherwise act locally). */
+  viewerKey: 'remote:viewer-key',
+
+  // Host capture window (#rd-host).
+  engineConfig: 'remote:engine-config',
+  engineArm: 'remote:engine-arm',
+  engineSignal: 'remote:engine-signal',
+  engineState: 'remote:engine-state',
+  /** One-way: input events from the viewer's data channel. */
+  engineInput: 'remote:engine-input',
+  /** Push to the engine: SignalMessage from the viewer. */
+  engineSignalIn: 'remote:engine-signal-in',
+  /** Push to the engine: start | quality | display | stop. */
+  engineCommand: 'remote:engine-command'
+} as const
+
+/** The connected Google account and its Drive folders — see electron/main/google. */
+export const GOOGLE_IPC = {
+  status: 'google:status',
+  connect: 'google:connect',
+  cancelConnect: 'google:cancel-connect',
+  disconnect: 'google:disconnect',
+  folders: 'google:folders',
+  createFolder: 'google:create-folder',
+  /** Push: GoogleStatus. */
+  changed: 'google:changed'
+} as const
+
+/** File Share: the user's own Drive files — see electron/main/fileshare. */
+export const FILESHARE_IPC = {
+  getFolder: 'fileshare:get-folder',
+  setFolder: 'fileshare:set-folder',
+  list: 'fileshare:list',
+  chooseAndUpload: 'fileshare:choose-and-upload',
+  uploadPaths: 'fileshare:upload-paths',
+  uploadBytes: 'fileshare:upload-bytes',
+  cancelUpload: 'fileshare:cancel-upload',
+  jobs: 'fileshare:jobs',
+  thumbnail: 'fileshare:thumbnail',
+  share: 'fileshare:share',
+  describe: 'fileshare:describe',
+  remove: 'fileshare:remove',
+  download: 'fileshare:download',
+  openLink: 'fileshare:open-link',
+  /** Push: one UploadJob changed. */
+  job: 'fileshare:job',
+  /** Push: the files of a folder changed (folder id). */
+  filesChanged: 'fileshare:files-changed'
 } as const

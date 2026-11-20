@@ -16,13 +16,18 @@ import { markInterruptedSessions, registerMediaProtocol, registerMediaScheme } f
 import { hasActiveRecording, shutdownRecorder } from './recorder/session'
 import { registerTranscriberIpc } from './transcriber/ipc'
 import { registerScreenshots } from './screenshot/ipc'
+import { registerFileShare } from './fileshare/ipc'
 import { loadTranscripts, shutdownTranscriber } from './transcriber/service'
+import { registerRemoteIpc } from './remote/ipc'
+import { configureRemoteBeforeReady, startRemoteDesktop, stopRemoteDesktop } from './remote/service'
 
 app.setAppUserModelId(APP_ID)
 
 // Recorder: system-audio capture features and the media:// scheme must be set before ready.
 enableCaptureFeatures()
 registerMediaScheme()
+// Remote Desktop: real LAN addresses in WebRTC candidates (before ready).
+configureRemoteBeforeReady()
 
 /*
  * One agent per machine: a second copy could not bind the port anyway, so it
@@ -52,6 +57,8 @@ if (!app.requestSingleInstanceLock()) {
     // Transcripts: saved jobs (one left mid-run is marked failed), then the IPC.
     loadTranscripts()
     registerTranscriberIpc()
+    // Remote Desktop: IPC first, then the listener / discovery (it pushes status to the window).
+    registerRemoteIpc()
 
     const hidden = launchedHidden()
     if (hidden && process.platform === 'darwin') app.dock?.hide()
@@ -65,6 +72,8 @@ if (!app.requestSingleInstanceLock()) {
 
     // Screenshots: shortcuts, IPC, and whether the menu-bar icon shows (before the tray is made).
     registerScreenshots(setTrayVisible)
+    // Google Drive account (Screenshots upload + File Share).
+    registerFileShare()
     createTray(snapshot(), trayActions)
     const unsubscribe = subscribe(state => {
       updateTray(state, trayActions)
@@ -74,6 +83,7 @@ if (!app.requestSingleInstanceLock()) {
 
     startServer()
     startPrinterMonitor()
+    startRemoteDesktop()
 
     app.on('activate', () => showWindow())
   })
@@ -95,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     logger.info('Shutting down')
     stopPrinterMonitor()
     shutdownTranscriber()
+    stopRemoteDesktop()
     void stopServer()
     destroyTray()
     BrowserWindow.getAllWindows().forEach(window => window.destroy())
@@ -110,7 +121,7 @@ function applyContentSecurityPolicy(): void {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          `default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: recording-media:; media-src 'self' blob: recording-media:; font-src 'self' data:; connect-src 'self' data: blob:${devServer ? ` ${devServer} ws:` : ''}; object-src 'none'; base-uri 'none'; form-action 'none'`
+          `default-src 'self'; script-src ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: recording-media: https://*.googleusercontent.com; media-src 'self' blob: recording-media:; font-src 'self' data:; connect-src 'self' data: blob:${devServer ? ` ${devServer} ws:` : ''}; object-src 'none'; base-uri 'none'; form-action 'none'`
         ]
       }
     })
