@@ -110,3 +110,7 @@ are mirrored in TrackVid-FE `src/config/constant.ts` (`PRINT_AGENT_*`).
 - Auto-update.
 - The Windows status / queue / raw-printing code (PowerShell) is unit-tested but not yet run on a Windows machine.
 - Real `.icns` / `.ico` icons (build/icon.png is the CMS icon).
+
+
+Change usability
+/Users/apple/Documents/Sagar/Other/Featured-App/shared/constants/sidebarFeatures.json
