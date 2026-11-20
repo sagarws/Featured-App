@@ -2,13 +2,14 @@ import type { ReactNode } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import { ConnectedTvOutlined, CropFree, FiberSmartRecordOutlined, FolderSharedOutlined, SubtitlesOutlined } from '@mui/icons-material'
 import type { AgentState } from '@shared/types/agent'
+import { isFeatureEnabled } from '@shared/constants/sidebarFeatures'
 import { SIDEBAR } from '../theme/brand'
 import logo from '../assets/app-icon.png'
 
 export type Page = 'home' | 'screenshots' | 'fileshare' | 'recorder' | 'transcripts' | 'remote' | 'settings'
 
 // A Tabler class from styles/icons.css, or a component for icons not in that set.
-const NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
+const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'home', label: 'Home', icon: 'tabler-smart-home' },
   { id: 'screenshots', label: 'Screenshots', icon: <CropFree sx={{ fontSize: 20 }} /> },
   { id: 'fileshare', label: 'File Share', icon: <FolderSharedOutlined sx={{ fontSize: 20 }} /> },
@@ -18,7 +19,16 @@ const NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'settings', label: 'Settings', icon: 'tabler-settings' }
 ]
 
-const Sidebar = ({ page, onNavigate, state }: { page: Page; onNavigate: (page: Page) => void; state: AgentState }) => {
+/** The sidebar items switched on in shared/constants/sidebarFeatures.json, in sidebar order. */
+export const NAV = ALL_NAV.filter(item => isFeatureEnabled(item.id))
+
+/** Can this page be shown? (Switched off in sidebarFeatures.json = no.) */
+export const pageEnabled = (page: Page): boolean => NAV.some(item => item.id === page)
+
+/** Where the app opens: Home, or the first enabled feature. */
+export const firstPage = (): Page | null => (pageEnabled('home') ? 'home' : (NAV[0]?.id ?? null))
+
+const Sidebar = ({ page, onNavigate, state }: { page: Page | null; onNavigate: (page: Page) => void; state: AgentState }) => {
   const online = state.server.state === 'listening'
   const starting = state.server.state === 'starting'
 

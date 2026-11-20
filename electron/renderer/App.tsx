@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { Box } from '@mui/material'
 import type { AgentState } from '@shared/types/agent'
-import Sidebar, { type Page } from './layout/Sidebar'
+import Sidebar, { firstPage, pageEnabled, type Page } from './layout/Sidebar'
 import TopBar from './layout/TopBar'
 import HomePage from './pages/HomePage'
 import SettingsPage from './pages/SettingsPage'
@@ -14,7 +14,11 @@ import RemoteDesktopPage from './remote/RemoteDesktopPage'
 import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
-  const [page, setPage] = useState<Page>('home')
+  const [page, setPageState] = useState<Page | null>(firstPage)
+  // Disabled features (sidebarFeatures.json) cannot be opened from anywhere.
+  const setPage = (next: Page) => {
+    if (pageEnabled(next)) setPageState(next)
+  }
   const [query, setQuery] = useState('')
 
   const search = (value: string) => {
@@ -36,6 +40,7 @@ const App = ({ state }: { state: AgentState }) => {
           {page === 'transcripts' && <TranscriptPage />}
           {page === 'remote' && <RemoteDesktopPage />}
           {page === 'settings' && <SettingsPage state={state} />}
+          {page === null && <Box sx={{ color: 'text.secondary', textAlign: 'center', mt: 10 }}>No features are switched on in shared/constants/sidebarFeatures.json.</Box>}
         </Box>
       </Box>
       {/* The recorder reports through react-hot-toast. */}
