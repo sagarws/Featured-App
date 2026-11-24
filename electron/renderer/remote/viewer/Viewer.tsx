@@ -74,6 +74,8 @@ const Viewer = () => {
   const area = useRef<HTMLDivElement | null>(null)
   const { media, stats, sendInput, sendMove } = useRemoteConnection(config, video)
 
+  const hasTurn = (config?.iceServers ?? []).some(server => [server.urls].flat().some(url => /^turns?:/i.test(url)))
+
   const [permission, setPermission] = useState<RemotePermission>('view')
   const [expiresAt, setExpiresAt] = useState<number | null>(null)
   const [displays, setDisplays] = useState<RemoteDisplay[]>([])
@@ -84,6 +86,16 @@ const Viewer = () => {
   const [fullscreen, setFullscreen] = useState(false)
   const [toolbarShown, setToolbarShown] = useState(true)
   const [session, setSession] = useState<'active' | 'reconnecting' | 'ended'>('active')
+  // The session is up but no picture after this long: the two networks cannot
+  // open a video path (NAT / firewall). Say so instead of spinning forever.
+  const VIDEO_STALL_MS = 20_000
+  const [stallFlag, setStallFlag] = useState(false)
+  const waitingForVideo = media !== 'connected' && session === 'active'
+  useEffect(() => {
+    const timer = setTimeout(() => setStallFlag(waitingForVideo), waitingForVideo ? VIDEO_STALL_MS : 0)
+    return () => clearTimeout(timer)
+  }, [waitingForVideo])
+  const videoStalled = stallFlag && waitingForVideo
   const [endReason, setEndReason] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; severity: 'info' | 'warning' | 'error' | 'success' } | null>(null)
   const [inputProblem, setInputProblem] = useState<string | null>(null)
@@ -605,6 +617,13 @@ const Viewer = () => {
             <Typography sx={{ color: 'rgba(255,255,255,.8)' }}>
               {session === 'reconnecting' ? 'Connection interrupted — reconnecting…' : media === 'interrupted' ? 'Video interrupted — recovering…' : 'Starting the remote screen…'}
             </Typography>
+            {videoStalled && (
+              <Typography sx={{ color: 'rgba(255,255,255,.65)', fontSize: 13, maxWidth: 520, textAlign: 'center', px: 3 }}>
+                {hasTurn
+                  ? 'Connected, but the video cannot get through. Check that the TURN server is running and its ports (3478, 49160–49200 UDP) are open. Still trying…'
+                  : 'Connected, but these two networks block a direct video path (strict NAT or firewall). Video between them needs a TURN server — set one in Remote Desktop → Settings → Network on both computers. Still trying…'}
+              </Typography>
+            )}
           </Stack>
         )}
 
