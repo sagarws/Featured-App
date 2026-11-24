@@ -68,7 +68,7 @@ export interface RemoteSettings {
 }
 
 export interface DeviceIdentityInfo {
-  /** WD-123-456-789, derived from the device's public key. */
+  /** 8 digits (19304289), derived from the device's public key. */
   id: string
   /** Friendly name (or the computer name). */
   name: string
@@ -247,7 +247,7 @@ export interface RemoteStatus {
 }
 
 export interface ConnectRequest {
-  /** Device ID (WD-123-456-789 / 123456789) or an IP address / host[:port]. */
+  /** 8-digit device ID (19304289; an old WD-xxx-xxx-xxx is accepted) or an IP address / host[:port]. */
   target: string
   /** Unattended password; omit to ask the person at the other computer. */
   password?: string
@@ -292,7 +292,7 @@ export interface HostEngineConfig {
 }
 
 export interface IceServer {
-  urls: string
+  urls: string | string[]
   username?: string
   credential?: string
 }

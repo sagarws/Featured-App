@@ -7,6 +7,7 @@ import {
   fingerprintOf,
   generateEphemeral,
   generateIdentityKeys,
+  legacyDeviceIdFromPublicKey,
   passwordVerifier,
   privateKeyFromDer,
   randomToken,
@@ -122,11 +123,14 @@ const connectTo = async (h: Harness, options: Partial<ClientOptions> = {}) =>
   runClientHandshake(await dial(h.port), '127.0.0.1', { identity: client, purpose: 'connect', expectedId: h.host.id, kdf: (p, s) => passwordVerifier(p, s, FAST_KDF), ...options })
 
 describe('device identity', () => {
-  it('derives a stable WD-xxx-xxx-xxx ID from the key', () => {
+  it('derives a stable 8-digit ID from the key: the last 8 digits of the old WD-xxx-xxx-xxx one', () => {
     const keys = generateIdentityKeys()
     const id = deviceIdFromPublicKey(keys.publicKey)
-    expect(id).toMatch(/^WD-\d{3}-\d{3}-\d{3}$/)
+    expect(id).toMatch(/^\d{8}$/)
     expect(deviceIdFromPublicKey(keys.publicKey)).toBe(id)
+    const legacy = legacyDeviceIdFromPublicKey(keys.publicKey)
+    expect(legacy).toMatch(/^WD-\d{3}-\d{3}-\d{3}$/)
+    expect(legacy.replace(/\D/g, '').slice(1)).toBe(id)
     expect(fingerprintOf(keys.publicKey)).toMatch(/^([0-9A-F]{4} ){7}[0-9A-F]{4}$/)
   })
 
@@ -231,7 +235,7 @@ describe('a stale session from the same controller', () => {
 describe('identity checks', () => {
   it('refuses a host whose key does not match the dialled ID', async () => {
     const h = await startHost()
-    await expect(connectTo(h, { expectedId: 'WD-000-000-001' })).rejects.toMatchObject({ code: 'identity' })
+    await expect(connectTo(h, { expectedId: '00000001' })).rejects.toMatchObject({ code: 'identity' })
     expect(h.approvals).toHaveLength(0)
   })
 
@@ -374,7 +378,7 @@ describe('relay (outside the office network)', () => {
     })
     await online
     expect(await relayLookup(relayAddr, h.host.id)).toBe(true)
-    expect(await relayLookup(relayAddr, 'WD-000-000-000')).toBe(false)
+    expect(await relayLookup(relayAddr, '00000000')).toBe(false)
 
     const socket = await dialThroughRelay(relayAddr, h.host.id)
     sockets.push(socket)

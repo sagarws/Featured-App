@@ -159,7 +159,8 @@ export class Discovery {
       if (this.announcing) this.send({ app: APP_TAG, v: 1, ...this.self() })
       return
     }
-    if (a.id === this.self().id) return
+    // self() carries the old-form ID (for older builds); a.id is already the 8-digit one.
+    if (a.id === parseDeviceId(this.self().id)) return
     const previous = this.devices.get(a.id)
     this.devices.set(a.id, { id: a.id, name: a.name, os: a.os, platform: a.platform, address, port: a.port, fingerprint: a.fp, lastSeen: Date.now() })
     if (!previous || previous.name !== a.name || previous.address !== address || Date.now() - previous.lastSeen > ONLINE_MS) this.onChange()

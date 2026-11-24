@@ -23,10 +23,9 @@ const SETUP_TIMEOUT_MS = 10_000
 const PING_MS = 25_000
 const MAX_LINE = 8 * 1024
 
-export const relayDeviceId = (spki: Buffer): string => {
-  const digits = (createHash('sha256').update(spki).digest().readBigUInt64BE(0) % 1_000_000_000n).toString().padStart(9, '0')
-  return `WD-${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 9)}`
-}
+/** The 8-digit device ID of a key — the same rule as the app (electron/main/remote/core/crypto.ts). */
+export const relayDeviceId = (spki: Buffer): string =>
+  (createHash('sha256').update(spki).digest().readBigUInt64BE(0) % 100_000_000n).toString().padStart(8, '0')
 
 /** Read one JSON line; the bytes after it are pushed back onto the socket. */
 export const readLine = (socket: Socket, timeoutMs: number): Promise<Record<string, unknown>> =>

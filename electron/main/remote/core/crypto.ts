@@ -60,16 +60,27 @@ export const isEd25519PublicKey = (der: Buffer): boolean => {
   }
 }
 
+const keyNumber = (der: Buffer): bigint => createHash('sha256').update(der).digest().readBigUInt64BE(0)
+
 /**
- * The 9-digit device ID: SHA-256 of the public key, first 8 bytes mod 10⁹.
+ * The 8-digit device ID: SHA-256 of the public key, first 8 bytes mod 10⁸.
  * Binding the ID to the key means a peer cannot simply claim an ID; the
- * first connection also pins the full key fingerprint (TOFU), because 30 bits
+ * first connection also pins the full key fingerprint (TOFU), because ~27 bits
  * alone could be brute-forced by a determined attacker.
+ *
+ * mod 10⁸ is the last 8 digits of the old mod-10⁹ ID, so every existing
+ * computer keeps its number minus the first digit.
  */
-export const deviceIdFromPublicKey = (der: Buffer): string => {
-  const digest = createHash('sha256').update(der).digest()
-  const digits = (digest.readBigUInt64BE(0) % 1_000_000_000n).toString().padStart(9, '0')
-  return formatDeviceId(digits)
+export const deviceIdFromPublicKey = (der: Buffer): string => formatDeviceId((keyNumber(der) % 100_000_000n).toString())
+
+/**
+ * The ID builds up to 0.1.5 expect on the wire (WD-123-456-789). Sent in the
+ * handshake and LAN announcements so an older copy of the app still accepts
+ * this one; newer copies turn it into the 8-digit ID.
+ */
+export const legacyDeviceIdFromPublicKey = (der: Buffer): string => {
+  const digits = (keyNumber(der) % 1_000_000_000n).toString().padStart(9, '0')
+  return `WD-${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 9)}`
 }
 
 /** 128-bit fingerprint of a public key, as 8 groups of 4 hex digits. */

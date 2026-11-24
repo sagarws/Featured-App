@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { createServer, type Server, type Socket } from 'node:net'
 import { app, dialog, Notification, powerMonitor, powerSaveBlocker, screen, type BrowserWindow, type WebContents } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
+import { DIRECT_DIAL_TIMEOUT_MS, REMOTE_SERVER } from '@shared/constants/remote'
 import type {
   ConnectRequest,
   HistoryEntry,
@@ -18,7 +19,7 @@ import { parseConnectTarget, passwordProblem } from '@shared/utils/remote'
 import { logger } from '../logger'
 import { screenPermission } from '../recorder/capture'
 import { getWindow } from '../window'
-import { DEFAULT_KDF, kdfParamsAcceptable, passwordVerifier } from './core/crypto'
+import { DEFAULT_KDF, kdfParamsAcceptable, legacyDeviceIdFromPublicKey, passwordVerifier } from './core/crypto'
 import { RemoteError, runClientHandshake, runHostHandshake, type HostInfo, type HostPolicy, type PeerInfo, type UnattendedSecret } from './core/handshake'
 import { AuthLimiter, WindowCounter } from './core/limiter'
 import { RelayHost } from './core/relayClient'
@@ -85,11 +86,30 @@ const transfers = new Transfers({
 
 const settings = (): RemoteSettings => store.getRemoteSettings()
 
+/** The relay in use: this computer's own setting, else the built-in server (shared/constants/remote.ts). */
+const relayInUse = (): string => settings().relay || (REMOTE_SERVER.host ? `${REMOTE_SERVER.host}:${REMOTE_SERVER.relayPort}` : '')
+
+/**
+ * STUN/TURN for the video. On one network WebRTC connects directly whatever
+ * is listed here; across networks it needs these (STUN to punch through NAT,
+ * TURN when that fails).
+ */
 export const iceServers = (): IceServer[] => {
   const s = settings()
-  if (!s.turnUrl) return []
-  const credential = store.getTurnCredential()
-  return [{ urls: s.turnUrl, ...(s.turnUsername ? { username: s.turnUsername } : {}), ...(credential ? { credential } : {}) }]
+  if (s.turnUrl) {
+    const credential = store.getTurnCredential()
+    return [{ urls: s.turnUrl, ...(s.turnUsername ? { username: s.turnUsername } : {}), ...(credential ? { credential } : {}) }]
+  }
+  if (!REMOTE_SERVER.host) return []
+  const at = `${REMOTE_SERVER.host}:${REMOTE_SERVER.turnPort}`
+  return [
+    { urls: `stun:${at}` },
+    {
+      urls: [`turn:${at}?transport=udp`, `turn:${at}?transport=tcp`],
+      username: REMOTE_SERVER.turnUsername,
+      credential: REMOTE_SERVER.turnCredential
+    }
+  ]
 }
 
 const history = (entry: Omit<HistoryEntry, 'at'>): void => store.appendHistory({ at: Date.now(), ...entry })
@@ -355,7 +375,8 @@ const applyNetwork = (): void => {
         s.port + 1,
         () => {
           const id = store.identityInfo()
-          return { id: id.id, name: id.name, os: id.os, platform: id.platform, port: settings().port, fp: id.fingerprint }
+          // Announced in the old form so builds up to 0.1.5 still list this computer; newer ones read it as the 8-digit ID.
+          return { id: legacyDeviceIdFromPublicKey(store.localIdentity().publicKey), name: id.name, os: id.os, platform: id.platform, port: settings().port, fp: id.fingerprint }
         },
         notify
       )
@@ -363,7 +384,7 @@ const applyNetwork = (): void => {
     } else discovery.setAnnounce(s.enabled)
   }
 
-  const wantRelay = s.enabled && s.relay ? s.relay : ''
+  const wantRelay = s.enabled ? relayInUse() : ''
   if (wantRelay !== relayAddress) {
     relayHost?.stop()
     relayHost = null
@@ -396,20 +417,17 @@ const routesFor = (target: NonNullable<ReturnType<typeof parseConnectTarget>>): 
   if (found) routes.push({ kind: 'direct', host: found.address, port: found.port })
   const saved = store.savedDevice(target.id)
   if (saved?.address && !routes.some(r => r.kind === 'direct' && r.host === saved.address)) routes.push({ kind: 'direct', host: saved.address, port: saved.port })
-  if (settings().relay) routes.push({ kind: 'relay', relay: settings().relay, deviceId: target.id })
+  const relay = relayInUse()
+  if (relay) routes.push({ kind: 'relay', relay, deviceId: target.id })
   return routes
 }
 
 export const connect = async (request: ConnectRequest, sender: WebContents, attemptId: string): Promise<string> => {
   const target = parseConnectTarget(request.target, settings().port)
-  if (!target) throw new Error('Enter a device ID (WD-123-456-789) or an IP address.')
+  if (!target) throw new Error('Enter the other computer’s 8-digit ID (for example 19304289).')
   if (target.kind === 'id' && target.id === store.localIdentity().id) throw new Error('That is this computer’s own ID.')
   const routes = routesFor(target)
-  if (!routes.length) {
-    throw new Error(
-      'That computer was not found on this network. Make sure the app is open there with remote access on, and that both computers are on the same office network — or enter its IP address, or set up a relay for connections outside the office.'
-    )
-  }
+  if (!routes.length) throw new Error(notReachableMessage(null))
   const abort = new AbortController()
   attempts.set(attemptId, abort)
   const expectedId = target.kind === 'id' ? target.id : undefined
@@ -420,7 +438,8 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
       progress(sender, attemptId, 'connecting', `Connecting via ${routeLabel(route)}…`)
       let socket: Socket
       try {
-        socket = await dial(route)
+        // A stale LAN address should not hold up the relay behind it.
+        socket = await dial(route, route.kind === 'direct' && routes.some(r => r.kind === 'relay') ? DIRECT_DIAL_TIMEOUT_MS : undefined)
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
         continue
@@ -480,10 +499,28 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
         lastError = error instanceof Error ? error : new Error(String(error))
       }
     }
+    if (routes.every(r => r.kind === 'direct') && target.kind === 'id') throw new Error(notReachableMessage(routes[0]?.kind === 'direct' ? routes[0].host : null))
     throw lastError ?? new Error('Could not connect.')
   } finally {
     attempts.delete(attemptId)
   }
+}
+
+const subnetOf = (address: string): string | null => /^(\d+\.\d+\.\d+)\.\d+$/.exec(address)?.[1] ?? null
+
+/**
+ * Why a device ID could not be reached when only this network was tried —
+ * naming the two networks when the computer was last seen on a different one,
+ * because "no answer" alone sends people looking at the wrong thing.
+ */
+const notReachableMessage = (lastAddress: string | null): string => {
+  const ours = store.lanAddresses()
+  const theirNet = lastAddress ? subnetOf(lastAddress) : null
+  const otherNetwork = theirNet !== null && !ours.some(a => subnetOf(a) === theirNet)
+  const where = otherNetwork
+    ? `It was last seen at ${lastAddress ?? ''}, on a different network from this computer (${ours.join(', ') || 'no network'}). `
+    : 'It is not answering on this network. '
+  return `${where}Check the app is open there with remote access on. To connect between different networks, the remote server must be set up (Remote Desktop → Settings → Network, or REMOTE_SERVER in shared/constants/remote.ts).`
 }
 
 export const cancelConnect = (attemptId: string): void => attempts.get(attemptId)?.abort()
@@ -663,8 +700,8 @@ export const diagnostics = async (): Promise<Record<string, unknown>> => {
     os: store.identityInfo().os,
     listening: serverStatus.listening ? `TCP ${serverStatus.port} on all interfaces` : `not listening${serverStatus.error ? ` (${serverStatus.error})` : ''}`,
     discovery: s.lanDiscovery ? `UDP ${s.port + 1} — ${discovery?.list().length ?? 0} device(s) seen` : 'off',
-    relay: s.relay ? `${s.relay} — ${serverStatus.relay}${serverStatus.relayError ? ` (${serverStatus.relayError})` : ''}` : 'not configured (LAN only)',
-    turn: s.turnUrl || 'not configured (LAN only)',
+    relay: relayInUse() ? `${relayInUse()}${s.relay ? '' : ' (built in)'} — ${serverStatus.relay}${serverStatus.relayError ? ` (${serverStatus.relayError})` : ''}` : 'not configured (same network only)',
+    turn: s.turnUrl || (REMOTE_SERVER.host ? `${REMOTE_SERVER.host}:${REMOTE_SERVER.turnPort} (built in)` : 'not configured (same network only)'),
     addresses: store.lanAddresses(),
     screenPermission: permissions.screen,
     inputPermission: `${permissions.input}${permissions.inputDetail ? ` — ${permissions.inputDetail}` : ''}`,

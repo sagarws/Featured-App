@@ -63,14 +63,22 @@ describe('remote settings', () => {
 
 describe('device IDs and targets', () => {
   it('normalises the ways people type an ID', () => {
-    expect(parseDeviceId('WD-123-456-789')).toBe('WD-123-456-789')
-    expect(parseDeviceId('wd 123 456 789')).toBe('WD-123-456-789')
-    expect(parseDeviceId('123456789')).toBe('WD-123-456-789')
-    expect(parseDeviceId('12345678')).toBeNull()
+    expect(parseDeviceId('19304289')).toBe('19304289')
+    expect(parseDeviceId(' 1930 4289 ')).toBe('19304289')
+    expect(parseDeviceId('00645969')).toBe('00645969')
+    // Old 9-digit IDs from builds up to 0.1.5: the new ID is their last 8 digits.
+    expect(parseDeviceId('WD-019-304-289')).toBe('19304289')
+    expect(parseDeviceId('wd 500 645 969')).toBe('00645969')
+    expect(parseDeviceId('019304289')).toBe('19304289')
+    expect(parseDeviceId('1234567')).toBeNull()
+    expect(parseDeviceId('1234567890')).toBeNull()
+    expect(parseDeviceId('1930A289')).toBeNull()
+    expect(parseDeviceId('XY-019-304-289')).toBeNull()
   })
 
   it('takes an ID, an IP, or a host with a port', () => {
-    expect(parseConnectTarget('123-456-789')).toEqual({ kind: 'id', id: 'WD-123-456-789' })
+    expect(parseConnectTarget('19304289')).toEqual({ kind: 'id', id: '19304289' })
+    expect(parseConnectTarget('WD-019-304-289')).toEqual({ kind: 'id', id: '19304289' })
     expect(parseConnectTarget('192.168.1.20')).toEqual({ kind: 'address', host: '192.168.1.20', port: DEFAULT_REMOTE_PORT })
     expect(parseConnectTarget('dev-pc.local:5000')).toEqual({ kind: 'address', host: 'dev-pc.local', port: 5000 })
     expect(parseConnectTarget('[fe80::1]:47800')).toEqual({ kind: 'address', host: 'fe80::1', port: 47800 })
@@ -243,7 +251,8 @@ describe('signals and discovery', () => {
 
   it('reads LAN announcements and ignores others', () => {
     const a = parseAnnouncement(Buffer.from(JSON.stringify({ app: 'featured-rd', v: 1, id: 'WD-111-222-333', name: 'Dev\u0001 PC', os: 'Windows 11', platform: 'win32', port: 47800, fp: 'AB' })))
-    expect(a).toMatchObject({ id: 'WD-111-222-333', name: 'Dev PC', platform: 'win32', port: 47800, query: false })
+    // Builds up to 0.1.5 (and this one, for their sake) announce the old form; it is read as the 8-digit ID.
+    expect(a).toMatchObject({ id: '11222333', name: 'Dev PC', platform: 'win32', port: 47800, query: false })
     expect(parseAnnouncement(Buffer.from(JSON.stringify({ app: 'featured-rd', v: 1, q: 1 })))?.query).toBe(true)
     expect(parseAnnouncement(Buffer.from(JSON.stringify({ app: 'other', v: 1, id: 'WD-111-222-333', port: 1 })))).toBeNull()
     expect(parseAnnouncement(Buffer.from(JSON.stringify({ app: 'featured-rd', v: 1, id: 'nope', port: 1 })))).toBeNull()

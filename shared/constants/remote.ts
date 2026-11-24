@@ -1,7 +1,13 @@
 import type { QualityPreset, SessionMinutes } from '../types/remote'
 
-/** Prefix of every device ID: WD-123-456-789. */
-export const DEVICE_ID_PREFIX = 'WD'
+/**
+ * A device ID is 8 digits and nothing else: 19304289.
+ * Builds up to 0.1.5 showed 9 digits with a prefix (WD-019-304-289); the
+ * 8-digit ID is the last 8 of those, so an old ID is still understood.
+ */
+export const DEVICE_ID_DIGITS = 8
+/** Prefix of the old 9-digit IDs (WD-123-456-789), accepted when typed or received from an old build. */
+export const LEGACY_DEVICE_ID_PREFIX = 'WD'
 
 /** TCP port for sessions; discovery uses the next one over UDP. */
 export const DEFAULT_REMOTE_PORT = 47800
@@ -69,3 +75,40 @@ export const FILE_CHUNK_BYTES = 256 * 1024
 export const MAX_CLIPBOARD_CHARS = 1_000_000
 
 export const MIN_PASSWORD_LENGTH = 8
+
+/**
+ * The Featured App remote server: how two computers on DIFFERENT networks
+ * reach each other (another office, another Wi-Fi, home ↔ office).
+ *
+ *   relay  TCP — introduces the two computers and carries the encrypted
+ *          control channel (tools/remote-relay/relay.ts).
+ *   TURN   UDP/TCP — carries the video when the two cannot reach each other
+ *          directly (coturn). Also answers STUN.
+ *
+ * Neither can read a session: it is end-to-end encrypted by the apps.
+ * Deploy both with tools/remote-relay/deploy (see its README), then put the
+ * server's public host name or IP in `host`. Empty = same-network only.
+ *
+ * On the same network the app still connects directly and never uses it.
+ * Settings → Network (relay / TURN) overrides these on one computer.
+ */
+export interface RemoteServer {
+  host: string
+  relayPort: number
+  turnPort: number
+  turnUsername: string
+  turnCredential: string
+}
+
+export const REMOTE_SERVER: Readonly<RemoteServer> = {
+  /** Public host name or IP of the server, e.g. 'remote.example.com'. Empty: not set up yet. */
+  host: '',
+  relayPort: 47900,
+  turnPort: 3478,
+  /** Must match `user=` in tools/remote-relay/deploy/turnserver.conf. */
+  turnUsername: 'featured',
+  turnCredential: ''
+}
+
+/** How long to try a computer's last known LAN address before moving on (to the relay). */
+export const DIRECT_DIAL_TIMEOUT_MS = 2500

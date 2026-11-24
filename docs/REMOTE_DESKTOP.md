@@ -63,10 +63,15 @@ distribution decision first.
 
 - **Device identity.** Each install generates an Ed25519 key on first start,
   stored encrypted with the OS keychain/DPAPI/libsecret (`safeStorage`) in
-  `remote-secrets.json`. The device ID `WD-123-456-789` is derived from the
-  public key, so it never changes across restarts and cannot be claimed
-  without the key. 9 digits are ~30 bits, so the *first* connection also pins
-  the key's 128-bit fingerprint (shown in the UI); a changed key is refused.
+  `remote-secrets.json`. The device ID — 8 digits, nothing else (`19304289`) —
+  is derived from the public key (SHA-256, first 8 bytes mod 10⁸), so it never
+  changes across restarts and cannot be claimed without the key. 8 digits are
+  ~27 bits, so the *first* connection also pins the key's 128-bit fingerprint
+  (shown in the UI); a changed key is refused. Builds up to 0.1.5 used 9 digits
+  (`WD-019-304-289`); the 8-digit ID is their last 8 digits, so saved, trusted
+  and blocked devices convert exactly, an old ID typed or pasted still works,
+  and the handshake/announcements still carry the old form so 0.1.5 accepts
+  0.1.6 and the other way round.
 - **Transport.** Fresh X25519 per connection → HKDF → AES-256-GCM, one key and
   a strict counter per direction: replayed, reordered or altered frames close
   the connection. Both sides sign the handshake transcript with their device
@@ -131,13 +136,19 @@ Two computers on the same LAN, both running the app:
 | Be controlled | **Accessibility** for the app (Diagnostics → *Ask macOS*); restart the session after granting | none (normal windows) | X11 session + `python3` with libX11/libXtst (preinstalled on X11 desktops). Wayland: view only |
 | In development | Permissions attach to the terminal / Electron binary that launched the app | — | — |
 
-## 4. Outside the office (optional, self-hosted)
+## 4. Different networks (the built-in remote server)
 
-On the LAN nothing leaves the network and no server is used. To reach a
-computer from another network, run the dependency-free relay and a coturn
-TURN server you control — see [`tools/remote-relay/README.md`](../tools/remote-relay/README.md).
-Neither can decrypt sessions. Without TURN, video between different NATed
-networks usually cannot connect.
+On one network nothing leaves it and no server is used. To connect between
+networks (another office, another Wi-Fi or subnet, home ↔ office) every app
+registers with the **remote server** set in `REMOTE_SERVER`
+(`shared/constants/remote.ts`): the dependency-free relay for the control
+channel and coturn (STUN/TURN) for the video. Deploy both with
+[`tools/remote-relay/deploy`](../tools/remote-relay/deploy/README.md). Neither
+can decrypt sessions. Connect tries: found on this network → last known
+address (2.5 s) → relay. Settings → Network can point one computer elsewhere.
+With no server set, a failed connect names both networks
+("last seen at 192.168.1.58, on a different network from this computer
+(192.168.10.65)").
 
 ## 5. Build and packaging
 

@@ -93,7 +93,7 @@ const DiagnosticsTab = ({ status }: { status: RemoteStatus }) => {
 
       <Section title='Reach another computer' subtitle='Checks the network path and the secure handshake, without logging in.'>
         <Stack direction='row' spacing={1} sx={{ py: 1.5 }}>
-          <TextField size='small' placeholder='WD-123-456-789 or 192.168.1.20' value={target} onChange={e => setTarget(e.target.value)} sx={{ flex: 1 }} />
+          <TextField size='small' placeholder='8-digit ID, e.g. 19304289' value={target} onChange={e => setTarget(e.target.value)} sx={{ flex: 1 }} />
           <Button variant='outlined' disabled={!target.trim()} onClick={() => void test()}>
             Test
           </Button>

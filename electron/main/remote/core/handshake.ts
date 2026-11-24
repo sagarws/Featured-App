@@ -1,11 +1,12 @@
 import type { Duplex } from 'node:stream'
 import { REMOTE_PROTOCOL_VERSION, REQUEST_TIMEOUT_MS } from '@shared/constants/remote'
 import type { HistoryEvent, RemotePermission, RemotePlatform, SessionMinutes } from '@shared/types/remote'
-import { isSessionMinutes, stripControl } from '@shared/utils/remote'
+import { isSessionMinutes, parseDeviceId, stripControl } from '@shared/utils/remote'
 import { Channel, SESSION_MAX_FRAME, type Received, type WireMessage } from './channel'
 import {
   deriveSessionKeys,
   deviceIdFromPublicKey,
+  legacyDeviceIdFromPublicKey,
   fingerprintOf,
   generateEphemeral,
   isEd25519PublicKey,
@@ -121,7 +122,8 @@ const parseHello = (frame: Buffer, role: 'client' | 'host'): ParsedHello => {
   const pub = b64(raw['pub'])
   if (!eph || !pub || !isEd25519PublicKey(pub) || !b64(raw['nonce'], 32)) throw new RemoteError('protocol', 'Bad handshake from the other computer.')
   const id = deviceIdFromPublicKey(pub)
-  if (raw['id'] !== id) throw new RemoteError('identity', 'The other computer’s ID does not match its key.')
+  // The 8-digit ID, or the 9-digit one an older build sends: either way it must be this key's.
+  if (typeof raw['id'] !== 'string' || parseDeviceId(raw['id']) !== id) throw new RemoteError('identity', 'The other computer’s ID does not match its key.')
   return {
     eph,
     raw,
@@ -144,7 +146,8 @@ const helloFor = (identity: LocalIdentity, role: 'client' | 'host', ephRaw: Buff
       role,
       eph: ephRaw.toString('base64'),
       nonce: randomToken().toString('base64'),
-      id: identity.id,
+      // The old form, so builds up to 0.1.5 (which compare it exactly) still connect.
+      id: legacyDeviceIdFromPublicKey(identity.publicKey),
       name: identity.name,
       os: identity.os,
       platform: identity.platform,

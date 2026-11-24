@@ -1,4 +1,4 @@
-import { DEFAULT_REMOTE_PORT, DEFAULT_SESSION_MINUTES, DEVICE_ID_PREFIX, MIN_PASSWORD_LENGTH, QUALITY_PROFILES, SESSION_MINUTES } from '../constants/remote'
+import { DEFAULT_REMOTE_PORT, DEFAULT_SESSION_MINUTES, DEVICE_ID_DIGITS, LEGACY_DEVICE_ID_PREFIX, MIN_PASSWORD_LENGTH, QUALITY_PROFILES, SESSION_MINUTES } from '../constants/remote'
 import type {
   CodecPreference,
   IncomingFilePolicy,
@@ -107,15 +107,22 @@ export const sanitiseRemoteSettings = (raw: unknown): RemoteSettings => {
 
 // ── device IDs ──────────────────────────────────────────────────────────────
 
-/** 123456789 → WD-123-456-789. */
-export const formatDeviceId = (digits: string): string =>
-  `${DEVICE_ID_PREFIX}-${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 9)}`
+/** Exactly 8 digits: what a device ID looks like everywhere in the app. */
+export const isDeviceId = (value: unknown): value is string => typeof value === 'string' && /^\d{8}$/.test(value)
 
-/** Accepts "WD-123-456-789", "wd 123 456 789", "123456789"; null if it is not a device ID. */
+/** The 8-digit device ID, from its digits (the last 8 when given more). */
+export const formatDeviceId = (digits: string): string => digits.slice(-DEVICE_ID_DIGITS).padStart(DEVICE_ID_DIGITS, '0')
+
+/**
+ * What someone typed or an older build sent, as an 8-digit ID; null if it is
+ * not one. Accepts "19304289" and "1930 4289", and the old 9-digit forms
+ * "WD-019-304-289" / "019304289" — the new ID is the old one's last 8 digits.
+ */
 export const parseDeviceId = (input: string): string | null => {
   const compact = input.trim().toUpperCase().replace(/[\s-]/g, '')
-  const digits = compact.startsWith(DEVICE_ID_PREFIX) ? compact.slice(DEVICE_ID_PREFIX.length) : compact
-  return /^\d{9}$/.test(digits) ? formatDeviceId(digits) : null
+  if (/^\d{8}$/.test(compact)) return compact
+  const legacy = compact.startsWith(LEGACY_DEVICE_ID_PREFIX) ? compact.slice(LEGACY_DEVICE_ID_PREFIX.length) : compact
+  return /^\d{9}$/.test(legacy) ? formatDeviceId(legacy) : null
 }
 
 export type ConnectTarget = { kind: 'id'; id: string } | { kind: 'address'; host: string; port: number }

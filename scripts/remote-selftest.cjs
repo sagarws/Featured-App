@@ -67,7 +67,7 @@ await host.evaluate(`new Promise(r => { const t = setInterval(() => { if (window
 
 // ── identity and listener ──
 let status = await host.evaluate(`window.printAgent.remote.getStatus().then(r => r.value)`)
-check('device ID generated', /^WD-\d{3}-\d{3}-\d{3}$/.test(status.identity.id), status.identity.id)
+check('device ID generated', /^\d{8}$/.test(status.identity.id), status.identity.id)
 for (let i = 0; i < 20 && !status.server.listening; i++) { await sleep(250); status = await host.evaluate(`window.printAgent.remote.getStatus().then(r => r.value)`) }
 check('listening for sessions', status.server.listening, `port ${status.server.port}`)
 check('unattended off by default', status.settings.unattendedEnabled === false)

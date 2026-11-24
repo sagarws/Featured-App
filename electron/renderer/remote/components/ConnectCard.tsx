@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material'
 import { LinkOutlined } from '@mui/icons-material'
 import type { RemoteStatus } from '@shared/types/remote'
+import { parseDeviceId } from '@shared/utils/remote'
 import IconTile from '../../components/IconTile'
 
 const newAttemptId = (): string => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('')
@@ -70,11 +71,16 @@ const ConnectCard = ({ status, target, onTarget }: { status: RemoteStatus; targe
       <Stack spacing={2}>
         <TextField
           label='Remote device ID'
-          placeholder='WD-123-456-789 or 192.168.1.20'
+          placeholder='8-digit ID, e.g. 19304289'
           value={target}
-          onChange={e => onTarget(e.target.value)}
+          // Digits only, 8 of them. A pasted old ID (WD-019-304-289) becomes its 8-digit form (19304289).
+          onChange={e => onTarget(parseDeviceId(e.target.value) ?? e.target.value.replace(/\D/g, '').slice(0, 8))}
           disabled={!!attempt}
-          inputProps={{ style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 18, letterSpacing: 1 } }}
+          inputProps={{
+            inputMode: 'numeric',
+            maxLength: 14,
+            style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 18, letterSpacing: 3 }
+          }}
           helperText={found ? `${found.name} — on this network (${found.address})` : ' '}
           onKeyDown={e => e.key === 'Enter' && target.trim() && !attempt && void connect()}
         />

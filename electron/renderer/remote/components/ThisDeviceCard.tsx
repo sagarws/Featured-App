@@ -31,13 +31,35 @@ const ThisDeviceCard = ({ status }: { status: RemoteStatus }) => {
     setEditing(false)
   }
 
+  const [agentBusy, setAgentBusy] = useState(false)
+
+  /** Windows: the SYSTEM agent that lets a full-control session see and unlock the lock screen (one administrator prompt). */
+  const setLockScreenAccess = async (on: boolean) => {
+    setAgentBusy(true)
+    const r = await (on ? api.installSecureAgent() : api.removeSecureAgent())
+    setAgentBusy(false)
+    if (!r.ok) toast.error(r.error)
+    else toast.success(on ? 'Lock screen access is on' : 'Lock screen access removed')
+  }
+
   const toggleUnattended = async (on: boolean) => {
     if (on && !status.unattendedPasswordSet) {
       setPasswordOpen(true)
       return
     }
     await update({ unattendedEnabled: on })
+    // Full access without anyone at the computer is only useful if the lock screen can be unlocked too.
+    if (on && settings.unattendedPermission === 'control' && status.secureAgent === 'not-installed') await setLockScreenAccess(true)
   }
+
+  const reach =
+    server.relay === 'online'
+      ? 'Reachable from any network.'
+      : server.relay === 'connecting'
+        ? 'Connecting to the remote server…'
+        : server.relay === 'error'
+          ? `Remote server unreachable${server.relayError ? ` (${server.relayError})` : ''} — same network only for now.`
+          : 'Reachable from this network only.'
 
   return (
     <Paper variant='outlined' sx={{ p: 4, borderRadius: 3, height: '100%' }}>
@@ -55,7 +77,7 @@ const ThisDeviceCard = ({ status }: { status: RemoteStatus }) => {
       </Stack>
 
       <Stack direction='row' alignItems='center' spacing={1} sx={{ p: 2, borderRadius: 2, bgcolor: 'action.hover', mb: 2 }}>
-        <Typography sx={{ flex: 1, fontSize: 26, fontWeight: 700, letterSpacing: 1, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>{identity.id}</Typography>
+        <Typography sx={{ flex: 1, fontSize: 28, fontWeight: 700, letterSpacing: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>{identity.id}</Typography>
         <Tooltip title='Copy device ID'>
           <IconButton onClick={copy}>
             <ContentCopyOutlined />
@@ -95,6 +117,11 @@ const ThisDeviceCard = ({ status }: { status: RemoteStatus }) => {
       <Typography variant='caption' color='text.secondary' component='div' sx={{ mt: 0.5, fontFamily: 'ui-monospace, Menlo, Consolas, monospace' }}>
         Key fingerprint {identity.fingerprint}
       </Typography>
+      {settings.enabled && (
+        <Typography variant='caption' color={server.relay === 'error' ? 'warning.main' : 'text.secondary'} component='div' sx={{ mt: 0.5 }}>
+          {reach}
+        </Typography>
+      )}
 
       {server.error && (
         <Alert severity='error' sx={{ mt: 2 }}>
@@ -109,6 +136,23 @@ const ThisDeviceCard = ({ status }: { status: RemoteStatus }) => {
         <Row title='Unattended access' hint={status.unattendedPasswordSet ? 'Connect with the permanent password, without anyone accepting.' : 'Off. Set a password to turn it on.'}>
           <Switch checked={settings.unattendedEnabled} disabled={!settings.enabled} onChange={e => void toggleUnattended(e.target.checked)} />
         </Row>
+        {status.secureAgent !== 'unsupported' && (
+          <Row
+            title='Unlock the lock screen remotely'
+            hint={
+              status.secureAgent === 'running'
+                ? 'On. A full-control session can see the Windows lock screen and type the password or PIN.'
+                : 'Off. Turn on to let a full-control session unlock this PC (asks for administrator approval once).'
+            }
+          >
+            <Switch
+              checked={status.secureAgent === 'running'}
+              disabled={agentBusy}
+              onChange={e => void setLockScreenAccess(e.target.checked)}
+              slotProps={{ input: { 'aria-label': 'Unlock the lock screen remotely' } }}
+            />
+          </Row>
+        )}
         <Row title='Unattended password'>
           <Button size='small' variant='outlined' startIcon={<KeyOutlined />} onClick={() => setPasswordOpen(true)}>
             {status.unattendedPasswordSet ? 'Change password' : 'Set password'}

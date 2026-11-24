@@ -3,7 +3,7 @@ import { hostname, networkInterfaces, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { app, safeStorage } from 'electron'
 import type { AuthorizedDevice, DeviceIdentityInfo, HistoryEntry, RemotePlatform, RemoteSettings, SavedDevice } from '@shared/types/remote'
-import { sanitiseRemoteSettings } from '@shared/utils/remote'
+import { parseDeviceId, sanitiseRemoteSettings } from '@shared/utils/remote'
 import { readDurableJson, writeDurableJson } from '../durableJson'
 import { logger } from '../logger'
 import { getSettings, updateSettings } from '../settings'
@@ -160,14 +160,30 @@ interface DevicesFile {
 let devices: DevicesFile | null = null
 const devicesPath = (): string => join(app.getPath('userData'), 'remote-devices.json')
 
+/**
+ * Records saved by builds up to 0.1.5 hold 9-digit IDs (WD-019-304-289). The
+ * 8-digit ID is their last 8 digits, so they convert exactly — names given to
+ * a saved device stay matched, and a pinned key or a block keeps applying.
+ * A name that was just the old ID is replaced with the new one.
+ */
+const withCurrentIds = <T extends { id: string; name?: string }>(list: T[]): T[] => {
+  const out: T[] = []
+  for (const entry of list) {
+    const id = parseDeviceId(entry.id)
+    if (!id || out.some(d => d.id === id)) continue
+    out.push({ ...entry, id, ...(entry.name !== undefined && parseDeviceId(entry.name) === id ? { name: id } : {}) })
+  }
+  return out
+}
+
 const readDevices = (): DevicesFile => {
   if (devices) return devices
   try {
     const raw = readDurableJson<Partial<DevicesFile>>(devicesPath())
     devices = {
-      saved: Array.isArray(raw.saved) ? raw.saved.filter(d => typeof d?.id === 'string' && typeof d.fingerprint === 'string') : [],
-      authorized: Array.isArray(raw.authorized) ? raw.authorized.filter(d => typeof d?.id === 'string') : [],
-      blocked: Array.isArray(raw.blocked) ? raw.blocked.filter(d => typeof d?.id === 'string') : []
+      saved: withCurrentIds(Array.isArray(raw.saved) ? raw.saved.filter(d => typeof d?.id === 'string' && typeof d.fingerprint === 'string') : []),
+      authorized: withCurrentIds(Array.isArray(raw.authorized) ? raw.authorized.filter(d => typeof d?.id === 'string') : []),
+      blocked: withCurrentIds(Array.isArray(raw.blocked) ? raw.blocked.filter(d => typeof d?.id === 'string') : [])
     }
   } catch {
     devices = { saved: [], authorized: [], blocked: [] }

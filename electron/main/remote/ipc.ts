@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainI
 import { REMOTE_IPC } from '@shared/constants/channels'
 import type { Result } from '@shared/types/agent'
 import type { ConnectRequest, QualityPreset, RemotePermission, RemoteSettings } from '@shared/types/remote'
-import { isSessionMinutes, parseInputEvent, QUALITY_PRESETS, stripControl } from '@shared/utils/remote'
+import { isDeviceId, isSessionMinutes, parseInputEvent, QUALITY_PRESETS, stripControl } from '@shared/utils/remote'
 import { logger } from '../logger'
 import { getWindow, isRendererUrl } from '../window'
 import { parseSignal } from './signal'
@@ -61,7 +61,7 @@ const shortId = (v: unknown): string => {
   return v
 }
 const deviceId = (v: unknown): string => {
-  if (typeof v !== 'string' || !/^WD-\d{3}-\d{3}-\d{3}$/.test(v)) throw new Error('Unknown device.')
+  if (!isDeviceId(v)) throw new Error('Unknown device.')
   return v
 }
 const permission = (v: unknown): RemotePermission => (v === 'view' ? 'view' : 'control')
