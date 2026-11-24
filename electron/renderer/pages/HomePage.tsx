@@ -1,6 +1,7 @@
 import { Box, Paper, Stack, Typography } from '@mui/material'
 import type { AgentState } from '@shared/types/agent'
 import StatusCard from '../components/StatusCard'
+import UpdateBanner from '../components/UpdateBanner'
 import PrintersCard from '../components/PrintersCard'
 import JobsCard from '../components/JobsCard'
 import { formatTime } from '../utils/format'
@@ -68,6 +69,8 @@ const HomePage = ({ state, query }: { state: AgentState; query: string }) => {
           />
         </Paper>
       </Stack>
+
+      <UpdateBanner state={state} />
 
       <StatusCard state={state} />
 

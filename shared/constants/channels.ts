@@ -16,6 +16,10 @@ export const IPC = {
   releaseJob: 'agent:release-job',
   reprintJob: 'agent:reprint-job',
   openPrinterSettings: 'agent:open-printer-settings',
+  checkForUpdates: 'agent:check-for-updates',
+  installUpdate: 'agent:install-update',
+  openUpdateLink: 'agent:open-update-link',
+  setAutoUpdate: 'agent:set-auto-update',
   /** One-way: a log line from the window (API calls, crashes) for the terminal and agent.log. */
   log: 'agent:log'
 } as const

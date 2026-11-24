@@ -42,6 +42,33 @@ npm run remote:selftest   # end-to-end on one machine (the app connects to itsel
 npm run remote:relay      # optional relay for connections outside the office
 ```
 
+## Auto update
+
+Each build asks its own entry in the software-versions list (check-otp). The URL per
+platform/arch is in `shared/constants/updates.ts`; today only **Windows x64**
+(`Featured-App-x64` → `…-x64-setup.exe`) and **Mac Apple Silicon** (`Featured-App-arm64` →
+`…-arm64.dmg`) are published. Others show "not published yet". The API answers
+`{ softwareName, version, link }`, where `link` is a Google Drive share link. No `latest.yml` is used.
+
+- **Auto update on** (Settings → Updates, the default): checks 10 s after every start. When a newer version
+  is out it downloads, verifies and installs it, and the app restarts. A check while the app is
+  running (every 6 h) only downloads it, and it installs on the next start or with **Restart & update**.
+  The app never restarts during a recording.
+- **Auto update off**: still checks and tells you (Home banner, tray, one notification), but
+  installs only when you press **Update now**.
+- **Check for updates** in Settings checks on demand.
+
+Before anything runs, the download is verified. It must be a real installer (not Drive's HTML page),
+the right kind for this computer, and, on a Mac, `com.featured.app` with a version newer than the
+installed one. On Windows the one-click NSIS installer runs silently and relaunches the app
+(`build/installer.nsh` waits for the old process to let go of its files). On a Mac a script
+replaces the `.app` after the app quits and reopens it. The Mac app must be in a folder you can
+write to, such as /Applications, not running from the DMG. A version that installs twice without
+the app catching up is not retried automatically.
+
+**Release steps:** bump `version` in package.json → build → upload the installer to Drive
+("Anyone with the link") → update that build's row in check-otp with the new version and link.
+
 ## API (loopback only)
 
 `GET /v1/status` → `{ ok, app, version, allowed, apiVersion: 2 }` answers any browser origin.

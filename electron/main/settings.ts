@@ -25,6 +25,8 @@ export interface AgentSettings {
   blockOfflinePrinters: boolean
   /** Desktop notifications when a printer needs attention or a job fails. */
   notifications: boolean
+  /** Download and install a newer version on its own (checked on every start). Off: only offered. */
+  autoUpdate: boolean
   /** Screen / webcam / audio recording. */
   recorder: RecorderSettings
   /** Screenshots. Keys and tokens are blank here: they live encrypted in screenshot-secrets.json. */
@@ -45,6 +47,7 @@ const defaults = (): AgentSettings => ({
   themeMode: 'system',
   blockOfflinePrinters: true,
   notifications: true,
+  autoUpdate: true,
   recorder: sanitiseRecorderSettings(null),
   screenshot: sanitiseScreenshotSettings(null),
   remoteDesktop: sanitiseRemoteSettings(null)
@@ -89,6 +92,7 @@ const sanitise = (raw: unknown): AgentSettings => {
     blockOfflinePrinters:
       typeof value.blockOfflinePrinters === 'boolean' ? value.blockOfflinePrinters : base.blockOfflinePrinters,
     notifications: typeof value.notifications === 'boolean' ? value.notifications : base.notifications,
+    autoUpdate: typeof value.autoUpdate === 'boolean' ? value.autoUpdate : base.autoUpdate,
     recorder: sanitiseRecorderSettings(value.recorder),
     screenshot: sanitiseScreenshotSettings(value.screenshot),
     remoteDesktop: sanitiseRemoteSettings(value.remoteDesktop)

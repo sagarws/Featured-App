@@ -9,6 +9,7 @@ import { startServer, stopServer } from './server'
 import { getSettings } from './settings'
 import { snapshot, subscribe } from './state'
 import { createTray, destroyTray, setTrayVisible, updateTray } from './tray'
+import { startUpdateChecks, stopUpdateChecks } from './updates'
 import { createWindow, markQuitting, showWindow } from './window'
 import { enableCaptureFeatures, registerDisplayMediaHandler } from './recorder/capture'
 import { registerRecorderIpc } from './recorder/ipc'
@@ -84,6 +85,7 @@ if (!app.requestSingleInstanceLock()) {
     startServer()
     startPrinterMonitor()
     startRemoteDesktop()
+    startUpdateChecks()
 
     app.on('activate', () => showWindow())
   })
@@ -104,6 +106,7 @@ if (!app.requestSingleInstanceLock()) {
     markQuitting()
     logger.info('Shutting down')
     stopPrinterMonitor()
+    stopUpdateChecks()
     shutdownTranscriber()
     stopRemoteDesktop()
     void stopServer()

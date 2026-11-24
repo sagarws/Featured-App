@@ -1,9 +1,39 @@
 import { useState } from 'react'
-import { Alert, Box, ButtonBase, Stack, Switch, Typography } from '@mui/material'
-import type { AgentState, Result, ThemeMode } from '@shared/types/agent'
+import { Alert, Box, Button, ButtonBase, LinearProgress, Stack, Switch, Typography } from '@mui/material'
+import type { AgentState, Result, ThemeMode, UpdateStatus } from '@shared/types/agent'
 import { useSettings } from '@core/hooks/useSettings'
 import SectionCard from '../components/SectionCard'
-import { platformLabel } from '../utils/format'
+import { formatTime, platformLabel } from '../utils/format'
+
+const mb = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(0)} MB`
+
+const updateHint = (update: UpdateStatus, version: string, autoUpdate: boolean): string => {
+  const at = 'checkedAt' in update && update.checkedAt ? ` Checked at ${formatTime(update.checkedAt)}.` : ''
+  switch (update.state) {
+    case 'unsupported':
+      return update.reason
+    case 'idle':
+      return `You have ${version}. Not checked yet.`
+    case 'checking':
+      return 'Checking for a new version…'
+    case 'current':
+      return `You have the latest version (${version}).${at}`
+    case 'available':
+      return autoUpdate
+        ? `Version ${update.latestVersion} is available. You have ${version}.${at}`
+        : `Version ${update.latestVersion} is available. You have ${version}. Press Update now to install it.${at}`
+    case 'downloading':
+      return update.totalBytes
+        ? `Downloading ${update.latestVersion}: ${mb(update.receivedBytes)} of ${mb(update.totalBytes)}`
+        : `Downloading ${update.latestVersion}…`
+    case 'ready':
+      return `Version ${update.latestVersion} is downloaded. It installs the next time the app starts, or now with Restart & update.`
+    case 'installing':
+      return `Installing ${update.latestVersion}. The app will restart in a moment…`
+    case 'error':
+      return `${update.error}${at}`
+  }
+}
 
 const MODES: { id: ThemeMode; label: string; hint: string; icon: string }[] = [
   { id: 'light', label: 'Day', hint: 'Light background', icon: 'tabler-sun' },
@@ -30,6 +60,10 @@ const SettingsPage = ({ state }: { state: AgentState }) => {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const devRun = !state.packaged
+  const { update } = state
+  const busy = update.state === 'checking' || update.state === 'downloading' || update.state === 'installing'
+  const canInstall =
+    update.state === 'available' || update.state === 'ready' || (update.state === 'error' && !!update.link)
 
   const toggle = async (action: () => Promise<Result>) => {
     setSaving(true)
@@ -138,6 +172,83 @@ const SettingsPage = ({ state }: { state: AgentState }) => {
           />
         </Row>
       </SectionCard>
+      <SectionCard
+        icon='tabler-cloud-download'
+        tone='info'
+        title='Updates'
+        subtitle='Keep Featured App on the latest version.'
+      >
+        <Stack spacing={1.5}>
+          <Row
+            title='Auto update'
+            hint={
+              state.autoUpdate
+                ? 'On. Checks every time the app starts and installs a new version by itself (the app restarts).'
+                : 'Off. You are told when a new version is out and choose when to install it.'
+            }
+          >
+            <Switch
+              checked={state.autoUpdate}
+              disabled={saving || update.state === 'unsupported'}
+              onChange={event => void toggle(() => window.printAgent.setAutoUpdate(event.target.checked))}
+              slotProps={{ input: { 'aria-label': 'Auto update' } }}
+            />
+          </Row>
+          <Row title={`Version ${state.version}`} hint={updateHint(update, state.version, state.autoUpdate)}>
+            <Stack direction='row' spacing={1} sx={{ flexShrink: 0 }}>
+              {canInstall && (
+                <Button
+                  variant='contained'
+                  size='small'
+                  disabled={saving || devRun}
+                  title={devRun ? 'Only in the installed app.' : undefined}
+                  startIcon={<i className='tabler-download' style={{ fontSize: 16 }} />}
+                  onClick={() => void toggle(() => window.printAgent.installUpdate())}
+                >
+                  {update.state === 'ready' ? 'Restart & update' : update.state === 'error' ? 'Try again' : 'Update now'}
+                </Button>
+              )}
+              <Button
+                variant='outlined'
+                size='small'
+                disabled={busy || update.state === 'unsupported'}
+                startIcon={
+                  <i
+                    className={update.state === 'checking' ? 'tabler-loader-2 animate-spin' : 'tabler-refresh'}
+                    style={{ fontSize: 16 }}
+                  />
+                }
+                onClick={() => void toggle(async () => {
+                  const result = await window.printAgent.checkForUpdates()
+                  return result.ok ? { ok: true, value: undefined } : result
+                })}
+              >
+                Check for updates
+              </Button>
+            </Stack>
+          </Row>
+          {update.state === 'downloading' && (
+            <LinearProgress
+              variant={update.percent >= 0 ? 'determinate' : 'indeterminate'}
+              value={Math.max(0, update.percent)}
+              sx={{ borderRadius: 1 }}
+            />
+          )}
+          {update.state === 'error' && update.link && (
+            <Typography variant='caption' color='text.secondary'>
+              Still not working?{' '}
+              <ButtonBase
+                onClick={() => void toggle(() => window.printAgent.openUpdateLink())}
+                sx={{ color: 'primary.main', fontSize: 'inherit', verticalAlign: 'baseline', textDecoration: 'underline' }}
+              >
+                Download the installer
+              </ButtonBase>{' '}
+              and run it yourself.
+            </Typography>
+          )}
+        </Stack>
+      </SectionCard>
+
       {error && <Alert severity='error'>{error}</Alert>}
 
       <SectionCard icon='tabler-info-circle' tone='primary' title='About'>

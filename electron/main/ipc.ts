@@ -1,6 +1,6 @@
 import { ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC } from '@shared/constants/channels'
-import type { AgentState, Result } from '@shared/types/agent'
+import type { AgentState, Result, UpdateStatus } from '@shared/types/agent'
 import { cancelJob, releaseJob, reprintJob, submitJob } from './jobs'
 import { applyOpenAtLogin } from './loginItem'
 import { logger } from './logger'
@@ -8,6 +8,7 @@ import { cancelQueueJob, clearPrinterQueue, findPrinter, refreshPrinters, releas
 import { buildTestPdf } from './print/testPage'
 import { updateSettings } from './settings'
 import { notify, snapshot } from './state'
+import { checkForUpdates, installUpdate, onAutoUpdateChanged, openUpdateLink } from './updates'
 import { isRendererUrl } from './window'
 
 /** Every handler refuses a caller that is not this app's own page. */
@@ -130,6 +131,30 @@ export const registerIpc = (): void => {
     const url = PRINTER_SETTINGS_URL[process.platform]
     if (!url) return { ok: false, error: 'Open your printer settings from the system menu.' }
     return attempt(() => shell.openExternal(url))
+  })
+
+  ipcMain.handle(IPC.checkForUpdates, async (event): Promise<Result<UpdateStatus>> => {
+    if (!fromRenderer(event)) return refused
+    return { ok: true, value: await checkForUpdates() }
+  })
+
+  ipcMain.handle(IPC.installUpdate, (event): Promise<Result> | Result => {
+    if (!fromRenderer(event)) return refused
+    return attempt(() => Promise.resolve().then(installUpdate))
+  })
+
+  ipcMain.handle(IPC.openUpdateLink, (event): Promise<Result> | Result => {
+    if (!fromRenderer(event)) return refused
+    return attempt(() => openUpdateLink())
+  })
+
+  ipcMain.handle(IPC.setAutoUpdate, (event, enabled: unknown): Result => {
+    if (!fromRenderer(event)) return refused
+    if (typeof enabled !== 'boolean') return { ok: false, error: 'Expected on or off.' }
+    updateSettings({ autoUpdate: enabled })
+    notify()
+    onAutoUpdateChanged(enabled)
+    return { ok: true, value: undefined }
   })
 
   ipcMain.handle(IPC.setBlockOfflinePrinters, (event, enabled: unknown): Result => {

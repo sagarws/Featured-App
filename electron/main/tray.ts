@@ -6,6 +6,7 @@ import type { AgentState } from '@shared/types/agent'
 import type { ScreenshotAction } from '@shared/types/screenshot'
 import { getScreenshotSettings, screenshotsFolder } from './screenshot/config'
 import { takeScreenshot } from './screenshot/service'
+import { installUpdate } from './updates'
 import { showWindow } from './window'
 
 /*
@@ -65,6 +66,21 @@ const buildMenu = (state: AgentState, actions: TrayActions): Menu =>
     },
     { type: 'separator' },
     { label: statusLine(state), enabled: false },
+    ...(state.update.state === 'available' || state.update.state === 'ready'
+      ? [
+          {
+            label: `${state.update.state === 'ready' ? 'Restart & update to' : 'Update to'} ${state.update.latestVersion}`,
+            enabled: app.isPackaged,
+            click: () => {
+              try {
+                installUpdate()
+              } catch {
+                showWindow()
+              }
+            }
+          }
+        ]
+      : []),
     { label: `Open ${APP_NAME}`, click: () => showWindow() },
     {
       label: 'Start when I log in',

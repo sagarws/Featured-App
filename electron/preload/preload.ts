@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { FILESHARE_IPC, GOOGLE_IPC, IPC, RECORDER_IPC, REMOTE_IPC, SCREENSHOT_IPC, TRANSCRIBER_IPC } from '@shared/constants/channels'
-import type { AgentState, Result, ThemeMode } from '@shared/types/agent'
+import type { AgentState, Result, ThemeMode, UpdateStatus } from '@shared/types/agent'
 import type {
   ConnectRequest,
   HistoryEntry,
@@ -78,6 +78,14 @@ const api = {
   releaseJob: (id: string): Promise<Result> => ipcRenderer.invoke(IPC.releaseJob, id),
   reprintJob: (id: string): Promise<Result> => ipcRenderer.invoke(IPC.reprintJob, id),
   openPrinterSettings: (): Promise<Result> => ipcRenderer.invoke(IPC.openPrinterSettings),
+  /** Ask the update server now (the result also arrives in the next state push). */
+  checkForUpdates: (): Promise<Result<UpdateStatus>> => ipcRenderer.invoke(IPC.checkForUpdates),
+  /** Download (if needed) and install the newer version now; the app restarts. */
+  installUpdate: (): Promise<Result> => ipcRenderer.invoke(IPC.installUpdate),
+  /** Open the newer version's installer link in the browser (manual fallback). */
+  openUpdateLink: (): Promise<Result> => ipcRenderer.invoke(IPC.openUpdateLink),
+  /** Settings → Auto update. */
+  setAutoUpdate: (enabled: boolean): Promise<Result> => ipcRenderer.invoke(IPC.setAutoUpdate, enabled),
   /** Write a line to the terminal and agent.log. One-way, never waits. */
   log: (level: 'info' | 'warn' | 'error', scope: string, message: string): void =>
     ipcRenderer.send(IPC.log, level, scope, message),

@@ -138,8 +138,35 @@ export type ServerStatus =
   | { state: 'listening'; host: string; port: number }
   | { state: 'failed'; error: string }
 
+/**
+ * Auto-update, as one state the window, tray and Settings render directly.
+ *   unsupported  no build is published for this platform/arch (shared/constants/updates.ts)
+ *   idle         not checked yet
+ *   checking     asking the version API now
+ *   current      this is the latest version
+ *   available    a newer version is out; nothing downloaded yet
+ *   downloading  the installer is arriving (`percent`, -1 while the size is unknown)
+ *   ready        downloaded and checked; installs on restart (or now, with "Restart & update")
+ *   installing   the app is about to quit and install it
+ *   error        the last check, download or install failed (`error` says why);
+ *                `latestVersion` stays set when a newer version is known
+ */
+export type UpdateStatus =
+  | { state: 'unsupported'; reason: string }
+  | { state: 'idle' | 'checking'; checkedAt?: string }
+  | { state: 'current'; latestVersion: string; checkedAt: string }
+  | { state: 'available'; latestVersion: string; link: string; checkedAt: string }
+  | { state: 'downloading'; latestVersion: string; link: string; percent: number; receivedBytes: number; totalBytes: number }
+  | { state: 'ready'; latestVersion: string; link: string }
+  | { state: 'installing'; latestVersion: string }
+  | { state: 'error'; error: string; checkedAt: string; latestVersion?: string; link?: string }
+
 export interface AgentState {
   version: string
+  /** Auto-update progress: is a newer version out, downloading, ready to install. */
+  update: UpdateStatus
+  /** Settings → Updates: download and install new versions without asking. */
+  autoUpdate: boolean
   platform: 'darwin' | 'win32' | 'linux'
   server: ServerStatus
   printers: AgentPrinter[]
