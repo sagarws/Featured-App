@@ -13,9 +13,19 @@
  *   node tools/remote-relay/relay.ts [port]        (Node 22.18+; default 47900)
  *
  * No dependencies. Line-delimited JSON during setup, raw bytes after "ready".
+ *
+ * Two ways in, on the same port:
+ *   plain TCP   the app connects to host:47900 (a VPS with the port open)
+ *   WebSocket   the app connects to wss://name (behind Cloudflare Tunnel or any
+ *               HTTPS proxy, which only pass HTTP/WebSocket). The same bytes go
+ *               inside binary WebSocket frames; everything else is identical.
+ * A connection that sends "GET " first is a WebSocket; one that stays silent
+ * (plain TCP clients wait for the relay's nonce) is plain TCP.
  */
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
-import { createServer, type Server, type Socket } from 'node:net'
+import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
+import { Duplex } from 'node:stream'
+import { connect as tlsConnect } from 'node:tls'
 
 const REGISTER_LABEL = 'featured-remote-relay/v1 register'
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -27,8 +37,240 @@ const MAX_LINE = 8 * 1024
 export const relayDeviceId = (spki: Buffer): string =>
   (createHash('sha256').update(spki).digest().readBigUInt64BE(0) % 100_000_000n).toString().padStart(8, '0')
 
+// ── WebSocket (RFC 6455), just what the relay needs ─────────────────────────
+
+/** A connection the relay protocol runs over: a TCP socket, or a WebSocket made to look like one. */
+export type RelayConn = Duplex & {
+  setNoDelay(noDelay?: boolean): unknown
+  setKeepAlive(enable?: boolean, initialDelay?: number): unknown
+  readonly remoteAddress?: string | undefined
+}
+
+const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+/** Larger than any frame either side sends (the app's session frames are far smaller). */
+const MAX_WS_PAYLOAD = 32 * 1024 * 1024
+const MAX_WS_HEADER = 16 * 1024
+
+const wsAccept = (key: string): string => createHash('sha1').update(key + WS_GUID).digest('base64')
+
+/**
+ * A WebSocket carrying a byte stream, as a Duplex: bytes written go out as
+ * binary frames, frames received come out as bytes. Clients mask what they
+ * send (`mask`), servers do not, as the RFC requires.
+ */
+export class WsStream extends Duplex {
+  remoteAddress: string | undefined
+  private readonly raw: Socket
+  private readonly mask: boolean
+  private buffer: Buffer = Buffer.alloc(0)
+  private fragments: Buffer[] = []
+  private closeSent = false
+
+  constructor(raw: Socket, mask: boolean, head: Buffer | null, remoteAddress?: string) {
+    super()
+    this.raw = raw
+    this.mask = mask
+    this.remoteAddress = remoteAddress ?? raw.remoteAddress
+    raw.on('data', (data: Buffer) => this.onRaw(data))
+    raw.on('end', () => this.push(null))
+    raw.on('close', () => this.destroy())
+    raw.on('error', error => this.destroy(error))
+    if (head?.length) this.onRaw(head)
+  }
+
+  setNoDelay(noDelay = true): this {
+    this.raw.setNoDelay(noDelay)
+    return this
+  }
+
+  setKeepAlive(enable = false, initialDelay = 0): this {
+    this.raw.setKeepAlive(enable, initialDelay)
+    return this
+  }
+
+  override _read(): void {
+    this.raw.resume()
+  }
+
+  override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    if (this.raw.destroyed) return callback(new Error('closed'))
+    this.raw.write(this.frame(0x2, chunk), callback)
+  }
+
+  override _final(callback: (error?: Error | null) => void): void {
+    this.sendClose()
+    this.raw.end()
+    callback()
+  }
+
+  override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+    this.raw.destroy()
+    callback(error)
+  }
+
+  private sendClose(): void {
+    if (this.closeSent || this.raw.destroyed) return
+    this.closeSent = true
+    this.raw.write(this.frame(0x8, Buffer.from([0x03, 0xe8])))
+  }
+
+  private frame(opcode: number, payload: Buffer): Buffer {
+    const length = payload.length
+    const extra = length < 126 ? 0 : length < 65536 ? 2 : 8
+    const header = Buffer.alloc(2 + extra + (this.mask ? 4 : 0))
+    header[0] = 0x80 | opcode
+    header[1] = (this.mask ? 0x80 : 0) | (length < 126 ? length : length < 65536 ? 126 : 127)
+    if (extra === 2) header.writeUInt16BE(length, 2)
+    else if (extra === 8) header.writeBigUInt64BE(BigInt(length), 2)
+    if (!this.mask) return Buffer.concat([header, payload])
+    const key = randomBytes(4)
+    key.copy(header, 2 + extra)
+    const masked = Buffer.allocUnsafe(length)
+    for (let i = 0; i < length; i++) masked[i] = (payload[i] ?? 0) ^ (key[i & 3] ?? 0)
+    return Buffer.concat([header, masked])
+  }
+
+  private onRaw(data: Buffer): void {
+    this.buffer = this.buffer.length ? Buffer.concat([this.buffer, data]) : data
+    for (;;) {
+      if (this.buffer.length < 2) return
+      const b0 = this.buffer[0] ?? 0
+      const b1 = this.buffer[1] ?? 0
+      const fin = (b0 & 0x80) !== 0
+      const opcode = b0 & 0x0f
+      const masked = (b1 & 0x80) !== 0
+      let length = b1 & 0x7f
+      let offset = 2
+      if (length === 126) {
+        if (this.buffer.length < 4) return
+        length = this.buffer.readUInt16BE(2)
+        offset = 4
+      } else if (length === 127) {
+        if (this.buffer.length < 10) return
+        const big = this.buffer.readBigUInt64BE(2)
+        if (big > BigInt(MAX_WS_PAYLOAD)) return void this.destroy(new Error('WebSocket frame too large'))
+        length = Number(big)
+        offset = 10
+      }
+      if (length > MAX_WS_PAYLOAD) return void this.destroy(new Error('WebSocket frame too large'))
+      const keyAt = offset
+      if (masked) offset += 4
+      if (this.buffer.length < offset + length) return
+      let payload = this.buffer.subarray(offset, offset + length)
+      if (masked) {
+        const key = this.buffer.subarray(keyAt, keyAt + 4)
+        const out = Buffer.allocUnsafe(length)
+        for (let i = 0; i < length; i++) out[i] = (payload[i] ?? 0) ^ (key[i & 3] ?? 0)
+        payload = out
+      }
+      this.buffer = this.buffer.subarray(offset + length)
+
+      if (opcode === 0x8) {
+        // Close: answer it, and that is the end of the stream.
+        this.sendClose()
+        this.raw.end()
+        this.push(null)
+        return
+      }
+      if (opcode === 0x9) {
+        if (!this.raw.destroyed) this.raw.write(this.frame(0xa, payload))
+        continue
+      }
+      if (opcode === 0xa) continue
+      if (opcode !== 0x0 && opcode !== 0x1 && opcode !== 0x2) return void this.destroy(new Error('Unknown WebSocket frame'))
+      this.fragments.push(Buffer.from(payload))
+      if (!fin) continue
+      const message = this.fragments.length === 1 ? (this.fragments[0] as Buffer) : Buffer.concat(this.fragments)
+      this.fragments = []
+      if (message.length && !this.push(message)) this.raw.pause()
+    }
+  }
+}
+
+const isLoopback = (address: string | undefined): boolean =>
+  !address || address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+
+/**
+ * Server: answer an HTTP request that has already arrived on `socket`.
+ * A WebSocket upgrade becomes a WsStream; anything else (a browser, a health
+ * check) gets a one-line page and is closed. Behind Cloudflare / a proxy on
+ * this machine, the visitor's address comes from the proxy's header, so the
+ * per-address limits apply to visitors rather than to the proxy.
+ */
+const upgradeToWebSocket = (socket: Socket, request: Buffer): WsStream | null => {
+  const end = request.indexOf('\r\n\r\n')
+  const lines = request.subarray(0, end).toString('latin1').split('\r\n')
+  const headers = new Map<string, string>()
+  for (const line of lines.slice(1)) {
+    const colon = line.indexOf(':')
+    if (colon > 0) headers.set(line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim())
+  }
+  const key = headers.get('sec-websocket-key')
+  if ((headers.get('upgrade') ?? '').toLowerCase() !== 'websocket' || !key) {
+    socket.end('HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\nconnection: close\r\n\r\nFeatured App relay: running.\n')
+    return null
+  }
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${wsAccept(key)}\r\n\r\n`)
+  const forwarded = headers.get('cf-connecting-ip') ?? headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  return new WsStream(socket, false, request.subarray(end + 4), isLoopback(socket.remoteAddress) && forwarded ? forwarded : undefined)
+}
+
+/**
+ * Client: open a WebSocket to `url` (wss://host[:port][/path], ws:// for tests
+ * on this machine). Resolves once the server has switched protocols.
+ */
+export const wsConnect = (url: string, timeoutMs: number): Promise<WsStream> =>
+  new Promise((resolve, reject) => {
+    let target: URL
+    try {
+      target = new URL(url)
+    } catch {
+      return reject(new Error(`Not a relay address: ${url}`))
+    }
+    const secure = target.protocol === 'wss:' || target.protocol === 'https:'
+    const host = target.hostname.replace(/^\[|\]$/g, '')
+    const port = Number(target.port) || (secure ? 443 : 80)
+    const raw: Socket = secure ? tlsConnect({ host, port, servername: host, ALPNProtocols: ['http/1.1'] }) : netConnect({ host, port })
+    const key = randomBytes(16).toString('base64')
+    let response = Buffer.alloc(0)
+    const timer = setTimeout(() => fail(new Error('The relay did not answer.')), timeoutMs)
+    const fail = (error: Error): void => {
+      clearTimeout(timer)
+      raw.removeListener('data', onData)
+      raw.destroy()
+      reject(error)
+    }
+    const onData = (data: Buffer): void => {
+      response = Buffer.concat([response, data])
+      const end = response.indexOf('\r\n\r\n')
+      if (end < 0) {
+        if (response.length > MAX_WS_HEADER) fail(new Error('The relay sent a bad answer.'))
+        return
+      }
+      clearTimeout(timer)
+      raw.removeListener('data', onData)
+      raw.pause()
+      const head = response.subarray(0, end).toString('latin1')
+      const status = /^HTTP\/1\.1 (\d{3})/.exec(head)?.[1]
+      if (status !== '101') return fail(new Error(`The relay answered HTTP ${status ?? '?'}${status === '502' || status === '530' ? ' — is the relay running behind the tunnel?' : ''}.`))
+      const accept = /\r\nsec-websocket-accept:\s*(\S+)/i.exec(head)?.[1]
+      if (accept !== wsAccept(key)) return fail(new Error('The relay sent a bad answer.'))
+      resolve(new WsStream(raw, true, response.subarray(end + 4)))
+      raw.resume()
+    }
+    raw.once(secure ? 'secureConnect' : 'connect', () => {
+      const path = `${target.pathname || '/'}${target.search}`
+      raw.write(
+        `GET ${path} HTTP/1.1\r\nHost: ${target.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          `Sec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\nUser-Agent: FeaturedApp-Relay/1\r\n\r\n`
+      )
+    })
+    raw.on('data', onData)
+    raw.once('error', error => fail(error))
+  })
+
 /** Read one JSON line; the bytes after it are pushed back onto the socket. */
-export const readLine = (socket: Socket, timeoutMs: number): Promise<Record<string, unknown>> =>
+export const readLine = (socket: RelayConn, timeoutMs: number): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
     let buffer = Buffer.alloc(0)
     const cleanup = (): void => {
@@ -71,12 +313,12 @@ export const readLine = (socket: Socket, timeoutMs: number): Promise<Record<stri
     socket.resume()
   })
 
-export const writeLine = (socket: Socket, value: Record<string, unknown>): void => {
+export const writeLine = (socket: RelayConn, value: Record<string, unknown>): void => {
   if (!socket.destroyed) socket.write(`${JSON.stringify(value)}\n`)
 }
 
 interface Waiting {
-  client: Socket
+  client: RelayConn
   timer: NodeJS.Timeout
 }
 
@@ -88,7 +330,7 @@ export interface RelayOptions {
 
 export const startRelay = (options: RelayOptions): Promise<Server> => {
   const log = options.log ?? ((line: string) => process.stdout.write(`${new Date().toISOString()} ${line}\n`))
-  const hosts = new Map<string, Socket>()
+  const hosts = new Map<string, RelayConn>()
   const waiting = new Map<string, Waiting>()
   const attempts = new Map<string, number[]>()
 
@@ -100,7 +342,7 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
     return list.length <= 60
   }
 
-  const handle = async (socket: Socket): Promise<void> => {
+  const handle = async (socket: RelayConn): Promise<void> => {
     socket.setNoDelay(true)
     socket.setKeepAlive(true, 10_000)
     socket.on('error', () => undefined)
@@ -194,8 +436,39 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
     socket.destroy()
   }
 
+  // Plain TCP clients say nothing until they get the nonce; a WebSocket (or a
+  // browser) starts with "GET ". Wait briefly to tell them apart.
+  const SNIFF_MS = 300
   const server = createServer(socket => {
-    handle(socket).catch(() => socket.destroy())
+    socket.on('error', () => undefined)
+    let request = Buffer.alloc(0)
+    const asTcp = (): void => {
+      socket.removeListener('data', onData)
+      socket.pause()
+      if (request.length) socket.unshift(request)
+      handle(socket).catch(() => socket.destroy())
+    }
+    const timer = setTimeout(asTcp, SNIFF_MS)
+    const onData = (data: Buffer): void => {
+      request = Buffer.concat([request, data])
+      if (request.length >= 4 && request.subarray(0, 4).toString('latin1') !== 'GET ') {
+        clearTimeout(timer)
+        return asTcp()
+      }
+      if (request.indexOf('\r\n\r\n') < 0) {
+        if (request.length > MAX_WS_HEADER) socket.destroy()
+        return
+      }
+      clearTimeout(timer)
+      socket.removeListener('data', onData)
+      socket.pause()
+      const ws = upgradeToWebSocket(socket, request)
+      if (ws) {
+        ws.on('error', () => undefined)
+        handle(ws).catch(() => ws.destroy())
+      }
+    }
+    socket.on('data', onData)
   })
   return new Promise(resolve => server.listen(options.port, options.host ?? '0.0.0.0', () => resolve(server)))
 }

@@ -51,7 +51,7 @@ interface Harness {
 }
 
 const servers: Server[] = []
-const sockets: Socket[] = []
+const sockets: { destroy: () => unknown }[] = []
 const relayHosts: RelayHost[] = []
 afterEach(() => {
   relayHosts.splice(0).forEach(h => h.stop())
@@ -360,12 +360,19 @@ describe('limiter', () => {
 })
 
 describe('relay (outside the office network)', () => {
-  it('pipes an end-to-end session between a registered host and a client', async () => {
+  // The same session over plain TCP (a VPS) and over a WebSocket (Cloudflare Tunnel / an HTTPS proxy).
+  // RELAY_TEST_URL=wss://… npx vitest run tests/remoteProtocol.test.ts — also runs it through a deployed relay.
+  const live = process.env['RELAY_TEST_URL']
+  it.each([
+    ['plain TCP', (port: number) => `127.0.0.1:${port}`],
+    ['WebSocket', (port: number) => `ws://127.0.0.1:${port}`],
+    ...(live ? [['the live relay', () => live] as [string, (port: number) => string]] : [])
+  ])('pipes an end-to-end session between a registered host and a client over %s', async (_name, addressFor) => {
     const h = await startHost({ password: 'Correct-Horse-9' })
     const relay = await startRelay({ port: 0, host: '127.0.0.1', log: () => undefined })
     servers.push(relay)
     const address = relay.address()
-    const relayAddr = `127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`
+    const relayAddr = addressFor(typeof address === 'object' && address ? address.port : 0)
     expect(relayDeviceId(h.host.publicKey)).toBe(h.host.id)
 
     const online = new Promise<void>(resolve => {

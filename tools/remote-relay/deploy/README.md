@@ -1,47 +1,108 @@
-# Deploying the Featured App remote server
+# Deploying the Featured App remote server (no Docker)
 
 Lets two computers on **different networks** connect by their 8-digit ID (like
 AnyDesk). On the same network the app still connects directly and never uses it.
 Sessions stay end-to-end encrypted: the server cannot see screens or keystrokes.
 
-## 1. Server
+Two programs run on the server, both as normal systemd services:
 
-Any small Linux VPS with a public IP (1 vCPU / 1 GB is plenty for an office).
-Vercel and other serverless hosts cannot run it: it needs raw TCP and UDP.
+| Service | What | Port |
+|---|---|---|
+| `featured-relay` | `relay.ts` on Node.js — connects the two apps, carries the encrypted control channel | 47900 TCP |
+| `coturn` | TURN/STUN — carries the video when the two networks cannot reach each other | 3478 TCP+UDP, 49160–49200 UDP |
+
+## 1. Upload (from the Mac)
+
+Any Ubuntu / Debian VPS with a public IP; the smallest plan is enough.
 
 ```bash
-# on the VPS, with Docker installed
-git clone <this repo> featured-app && cd featured-app/tools/remote-relay/deploy
-nano turnserver.conf      # set the password, realm, and external-ip if the VPS is on AWS/GCP/Azure
-docker compose up -d
+cd /Users/apple/Documents/Sagar/Other/Featured-App
+scp -r tools/remote-relay root@YOUR_VPS_IP:/opt/featured-relay
 ```
 
-Open these ports in the VPS firewall / cloud security group:
+## 2. Install (on the VPS)
 
-| Port | Protocol | For |
-|---|---|---|
-| 47900 | TCP | relay (connection set-up + control channel) |
-| 3478 | TCP + UDP | STUN / TURN |
-| 49160–49200 | UDP | TURN video |
+```bash
+ssh root@YOUR_VPS_IP
+cd /opt/featured-relay/deploy
+sudo bash install.sh YOUR-TURN-PASSWORD          # letters/digits, 12+ characters
+```
 
-Check from any computer: `nc -vz <server> 47900` and `nc -vzu <server> 3478`.
+It installs Node.js 24 (if needed) and coturn, starts both services, opens the
+ports in `ufw` when it is on, and finds the public IP by itself — pass it as a
+second argument if that fails: `sudo bash install.sh YOUR-TURN-PASSWORD 203.0.113.25`.
+It ends by printing the three values for the app. Running it again is safe.
 
-## 2. App
+If the provider has its own firewall / security group (AWS, Azure, GCP,
+Hetzner, DigitalOcean…), open there too: **47900 TCP · 3478 TCP+UDP · 49160–49200 UDP**.
 
-In `shared/constants/remote.ts` → `REMOTE_SERVER`:
+## 3. Check (from any other computer)
+
+```bash
+nc -vz YOUR_VPS_IP 47900          # "succeeded"
+```
+
+## 4. App
+
+In `shared/constants/remote.ts` → `REMOTE_SERVER`, put what install.sh printed:
 
 ```ts
-host: 'remote.example.com',          // the VPS's host name or public IP
-turnUsername: 'featured',            // user=featured:… in turnserver.conf
-turnCredential: '…the password…',
+relay: '203.0.113.25:47900',
+stun: ['stun:203.0.113.25:3478'],
+turn: { urls: ['turn:203.0.113.25:3478?transport=udp', 'turn:203.0.113.25:3478?transport=tcp'], username: 'featured', credential: 'YOUR-TURN-PASSWORD' },
 ```
 
-Build and install the new version on **every** computer (auto update does this).
-Each computer then registers with the relay while the app runs, and
-Connect tries: same network → last known address → relay. Remote Desktop →
-Diagnostics shows "relay … (built in) — online".
+Build and install the new version on every computer. Remote Desktop then shows
+"Reachable from any network", and Diagnostics "relay … (built in) — online".
+
+## Without a VPS: Cloudflare Tunnel (testing)
+
+The relay also speaks WebSocket, so it can run on any computer behind a
+Cloudflare Tunnel (no port to open). Video then uses Cloudflare's free STUN; a
+TURN server is still needed for networks that block direct video.
+
+```bash
+node tools/remote-relay/relay.ts 47900
+cloudflared tunnel --url http://localhost:47900      # prints https://<name>.trycloudflare.com
+```
+
+App: `relay: 'wss://<name>.trycloudflare.com'` in `REMOTE_SERVER`, or the same
+in Remote Desktop → Settings → Network → Relay on each computer (no rebuild).
+A quick tunnel's name changes on every restart; a named tunnel on your own
+domain (`cloudflared tunnel create`) keeps it.
+
+Check a relay end to end from the repo:
+`RELAY_TEST_URL=wss://<name>.trycloudflare.com npx vitest run tests/remoteProtocol.test.ts -t relay`
+
+## Managing it
+
+```bash
+systemctl status featured-relay coturn        # running?
+journalctl -u featured-relay -f               # relay log
+journalctl -u coturn -f                       # TURN log
+systemctl restart featured-relay coturn       # after changing /etc/turnserver.conf
+```
+
+Updating the relay later: upload `relay.ts` to `/opt/featured-relay/` again and
+`systemctl restart featured-relay`.
+
+## By hand (what install.sh does)
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && apt install -y nodejs
+cp /opt/featured-relay/deploy/featured-relay.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now featured-relay
+
+apt install -y coturn
+cp /opt/featured-relay/deploy/turnserver.conf /etc/turnserver.conf
+nano /etc/turnserver.conf     # password after user=featured:, realm, external-ip
+sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn   # older Ubuntu
+systemctl enable --now coturn && systemctl restart coturn
+
+ufw allow 47900/tcp && ufw allow 3478 && ufw allow 49160:49200/udp
+```
 
 The TURN password ships inside the app, so anyone with the app could use the
-TURN server for video. coturn above refuses to reach private networks, which
+TURN server for video. The config refuses to reach private networks, which
 limits that to relaying traffic. Change the password and release a new version
 if it is ever abused.

@@ -32,7 +32,7 @@ const SettingsTab = ({ status }: { status: RemoteStatus }) => {
     }
     const fresh = await api.getStatus()
     if (fresh.ok) {
-      if (relay.trim() && !fresh.value.settings.relay) toast.error('The relay must be host:port.')
+      if (relay.trim() && !fresh.value.settings.relay) toast.error('The relay must be wss://name or host:port.')
       if (turnUrl.trim() && !fresh.value.settings.turnUrl) toast.error('The TURN/STUN URL must start with turn:, turns: or stun:.')
     }
   }
@@ -129,8 +129,12 @@ const SettingsTab = ({ status }: { status: RemoteStatus }) => {
         <Row title='Port' hint='TCP port other computers connect to. Allow it (and the UDP port after it) in the firewall.'>
           <TextField size='small' value={port} onChange={e => setPort(e.target.value.replace(/\D/g, ''))} sx={{ width: 120 }} />
         </Row>
-        <Row title='Relay (outside the office)' hint='Optional host:port of your own relay (tools/remote-relay). Sessions stay end-to-end encrypted.' wide>
-          <TextField size='small' placeholder='relay.example.com:47900' value={relay} onChange={e => setRelay(e.target.value)} sx={{ width: 360 }} />
+        <Row
+          title='Relay (other networks)'
+          hint='Leave empty to use the built-in server. Or wss://name (Cloudflare Tunnel) or host:port of your own relay (tools/remote-relay). Sessions stay end-to-end encrypted.'
+          wide
+        >
+          <TextField size='small' placeholder='wss://relay.example.com' value={relay} onChange={e => setRelay(e.target.value)} sx={{ width: 360 }} />
         </Row>
         <Row title='TURN / STUN server' hint='Optional, for video outside the office (self-hosted coturn). Example: turn:turn.example.com:3478' wide>
           <Stack spacing={1} sx={{ width: 360 }}>
@@ -146,7 +150,7 @@ const SettingsTab = ({ status }: { status: RemoteStatus }) => {
             Save network settings
           </Button>
         </Stack>
-        {(s.relay || s.turnUrl) && (
+        {(s.relay || s.turnUrl || status.server.relay !== 'off') && (
           <Typography variant='caption' color='text.secondary' sx={{ pt: 1 }}>
             Relay: {status.server.relay}
             {status.server.relayError ? ` (${status.server.relayError})` : ''}

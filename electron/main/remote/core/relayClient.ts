@@ -1,5 +1,5 @@
-import { connect, type Socket } from 'node:net'
-import { RELAY_REGISTER_LABEL, readLine, writeLine } from '../../../../tools/remote-relay/relay'
+import { connect } from 'node:net'
+import { RELAY_REGISTER_LABEL, readLine, writeLine, wsConnect, type RelayConn } from '../../../../tools/remote-relay/relay'
 import { signTranscript, type LocalIdentity } from './crypto'
 
 /*
@@ -15,7 +15,20 @@ const splitHostPort = (relay: string): { host: string; port: number } => {
   return { host: relay.slice(0, index).replace(/^\[|\]$/g, ''), port: Number(relay.slice(index + 1)) }
 }
 
-const open = (relay: string, timeoutMs = 8000): Promise<Socket> =>
+/** wss://… (WebSocket, e.g. behind Cloudflare Tunnel) or host:port (plain TCP). */
+export const isWebSocketRelay = (relay: string): boolean => /^wss?:\/\//i.test(relay)
+
+const open = async (relay: string, timeoutMs = 8000): Promise<RelayConn> => {
+  if (isWebSocketRelay(relay)) {
+    const ws = await wsConnect(relay, timeoutMs)
+    ws.setNoDelay(true)
+    ws.setKeepAlive(true, 10_000)
+    return ws
+  }
+  return openTcp(relay, timeoutMs)
+}
+
+const openTcp = (relay: string, timeoutMs: number): Promise<RelayConn> =>
   new Promise((resolve, reject) => {
     const { host, port } = splitHostPort(relay)
     const socket = connect({ host, port })
@@ -36,7 +49,7 @@ const open = (relay: string, timeoutMs = 8000): Promise<Socket> =>
   })
 
 /** Client: a pipe to `deviceId` through the relay. */
-export const dialThroughRelay = async (relay: string, deviceId: string): Promise<Socket> => {
+export const dialThroughRelay = async (relay: string, deviceId: string): Promise<RelayConn> => {
   const socket = await open(relay)
   try {
     await readLine(socket, 8000)
@@ -66,12 +79,12 @@ export const relayLookup = async (relay: string, deviceId: string): Promise<bool
 export interface RelayHostEvents {
   onState: (state: 'connecting' | 'online' | 'error', error: string | null) => void
   /** A client is waiting: run the host handshake on this socket. */
-  onIncoming: (socket: Socket, from: string) => void
+  onIncoming: (socket: RelayConn, from: string) => void
 }
 
 /** Host: stays registered, reconnecting with backoff, until stopped. */
 export class RelayHost {
-  private control: Socket | null = null
+  private control: RelayConn | null = null
   private stopped = false
   private retry: NodeJS.Timeout | null = null
   private backoff = 2000
@@ -105,7 +118,7 @@ export class RelayHost {
   private async connectLoop(): Promise<void> {
     if (this.stopped) return
     this.events.onState('connecting', null)
-    let socket: Socket
+    let socket: RelayConn
     try {
       socket = await open(this.relay)
     } catch (error) {
@@ -130,7 +143,7 @@ export class RelayHost {
     void this.listen(socket)
   }
 
-  private async listen(socket: Socket): Promise<void> {
+  private async listen(socket: RelayConn): Promise<void> {
     for (;;) {
       let line: Record<string, unknown>
       try {
@@ -147,7 +160,7 @@ export class RelayHost {
   }
 
   private async accept(token: string, from: string): Promise<void> {
-    let socket: Socket | null = null
+    let socket: RelayConn | null = null
     try {
       socket = await open(this.relay)
       await readLine(socket, 8000)

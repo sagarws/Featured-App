@@ -10,6 +10,7 @@ import {
   formatRemaining,
   mapModifierCode,
   parseConnectTarget,
+  normaliseRelay,
   parseDeviceId,
   parseInputEvent,
   passwordProblem,
@@ -257,5 +258,19 @@ describe('signals and discovery', () => {
     expect(parseAnnouncement(Buffer.from(JSON.stringify({ app: 'other', v: 1, id: 'WD-111-222-333', port: 1 })))).toBeNull()
     expect(parseAnnouncement(Buffer.from(JSON.stringify({ app: 'featured-rd', v: 1, id: 'nope', port: 1 })))).toBeNull()
     expect(parseAnnouncement(Buffer.from('not json'))).toBeNull()
+  })
+})
+
+describe('relay addresses', () => {
+  it('takes host:port and WebSocket URLs, and refuses anything else', () => {
+    expect(normaliseRelay('relay.example.com:47900')).toBe('relay.example.com:47900')
+    expect(normaliseRelay('https://ate-terrorists-attending-traditional.trycloudflare.com/')).toBe(
+      'wss://ate-terrorists-attending-traditional.trycloudflare.com'
+    )
+    expect(normaliseRelay('wss://relay.example.com/featured')).toBe('wss://relay.example.com/featured')
+    expect(normaliseRelay('ws://127.0.0.1:47900')).toBe('ws://127.0.0.1:47900')
+    expect(normaliseRelay('wss://user:pw@relay.example.com')).toBe('')
+    expect(normaliseRelay('ftp://relay.example.com')).toBe('')
+    expect(normaliseRelay('relay.example.com')).toBe('')
   })
 })

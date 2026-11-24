@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { createServer, type Server, type Socket } from 'node:net'
+import { createServer, type Server } from 'node:net'
 import { app, dialog, Notification, powerMonitor, powerSaveBlocker, screen, type BrowserWindow, type WebContents } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
 import { DIRECT_DIAL_TIMEOUT_MS, REMOTE_SERVER } from '@shared/constants/remote'
@@ -24,6 +24,7 @@ import { RemoteError, runClientHandshake, runHostHandshake, type HostInfo, type 
 import { AuthLimiter, WindowCounter } from './core/limiter'
 import { RelayHost } from './core/relayClient'
 import type { RemoteContext } from './context'
+import type { RelayConn } from '../../../tools/remote-relay/relay'
 import { dial, routeLabel, type Route } from './dial'
 import { Discovery } from './discovery'
 import { HostSession } from './hostSession'
@@ -87,7 +88,7 @@ const transfers = new Transfers({
 const settings = (): RemoteSettings => store.getRemoteSettings()
 
 /** The relay in use: this computer's own setting, else the built-in server (shared/constants/remote.ts). */
-const relayInUse = (): string => settings().relay || (REMOTE_SERVER.host ? `${REMOTE_SERVER.host}:${REMOTE_SERVER.relayPort}` : '')
+const relayInUse = (): string => settings().relay || REMOTE_SERVER.relay
 
 /**
  * STUN/TURN for the video. On one network WebRTC connects directly whatever
@@ -100,16 +101,11 @@ export const iceServers = (): IceServer[] => {
     const credential = store.getTurnCredential()
     return [{ urls: s.turnUrl, ...(s.turnUsername ? { username: s.turnUsername } : {}), ...(credential ? { credential } : {}) }]
   }
-  if (!REMOTE_SERVER.host) return []
-  const at = `${REMOTE_SERVER.host}:${REMOTE_SERVER.turnPort}`
-  return [
-    { urls: `stun:${at}` },
-    {
-      urls: [`turn:${at}?transport=udp`, `turn:${at}?transport=tcp`],
-      username: REMOTE_SERVER.turnUsername,
-      credential: REMOTE_SERVER.turnCredential
-    }
-  ]
+  const servers: IceServer[] = []
+  if (REMOTE_SERVER.stun.length) servers.push({ urls: [...REMOTE_SERVER.stun] })
+  const turn = REMOTE_SERVER.turn
+  if (turn) servers.push({ urls: [...turn.urls], username: turn.username, credential: turn.credential })
+  return servers
 }
 
 const history = (entry: Omit<HistoryEntry, 'at'>): void => store.appendHistory({ at: Date.now(), ...entry })
@@ -324,7 +320,7 @@ const policy: HostPolicy = {
   audit: (event, peer, detail) => history({ direction: 'incoming', event, peerId: peer.id, peerName: peer.name, address: peer.address, detail })
 }
 
-const onIncomingSocket = (socket: Socket, address: string): void => {
+const onIncomingSocket = (socket: RelayConn, address: string): void => {
   if (pendingHandshakes >= MAX_PENDING_HANDSHAKES) return void socket.destroy()
   pendingHandshakes++
   socket.setNoDelay(true)
@@ -436,7 +432,7 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
     for (const route of routes) {
       if (abort.signal.aborted) throw new RemoteError('cancelled', 'Cancelled.')
       progress(sender, attemptId, 'connecting', `Connecting via ${routeLabel(route)}…`)
-      let socket: Socket
+      let socket: RelayConn
       try {
         // A stale LAN address should not hold up the relay behind it.
         socket = await dial(route, route.kind === 'direct' && routes.some(r => r.kind === 'relay') ? DIRECT_DIAL_TIMEOUT_MS : undefined)
@@ -701,7 +697,8 @@ export const diagnostics = async (): Promise<Record<string, unknown>> => {
     listening: serverStatus.listening ? `TCP ${serverStatus.port} on all interfaces` : `not listening${serverStatus.error ? ` (${serverStatus.error})` : ''}`,
     discovery: s.lanDiscovery ? `UDP ${s.port + 1} — ${discovery?.list().length ?? 0} device(s) seen` : 'off',
     relay: relayInUse() ? `${relayInUse()}${s.relay ? '' : ' (built in)'} — ${serverStatus.relay}${serverStatus.relayError ? ` (${serverStatus.relayError})` : ''}` : 'not configured (same network only)',
-    turn: s.turnUrl || (REMOTE_SERVER.host ? `${REMOTE_SERVER.host}:${REMOTE_SERVER.turnPort} (built in)` : 'not configured (same network only)'),
+    turn: s.turnUrl || (REMOTE_SERVER.turn ? `${REMOTE_SERVER.turn.urls.join(', ')} (built in)` : 'none'),
+    stun: s.turnUrl ? '—' : REMOTE_SERVER.stun.join(', ') || 'none',
     addresses: store.lanAddresses(),
     screenPermission: permissions.screen,
     inputPermission: `${permissions.input}${permissions.inputDetail ? ` — ${permissions.inputDetail}` : ''}`,

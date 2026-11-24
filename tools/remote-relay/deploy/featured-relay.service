@@ -1,0 +1,12 @@
+[Unit]
+Description=Featured App Remote Desktop relay
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/featured-relay/relay.ts 47900
+Restart=always
+RestartSec=2
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

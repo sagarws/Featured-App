@@ -1,4 +1,5 @@
 import { connect, type Socket } from 'node:net'
+import type { RelayConn } from '../../../tools/remote-relay/relay'
 import { dialThroughRelay } from './core/relayClient'
 
 /** How to reach a host: straight over the LAN, or through the self-hosted relay. */
@@ -35,5 +36,5 @@ const dialDirect = (host: string, port: number, timeoutMs: number): Promise<Sock
     })
   })
 
-export const dial = (route: Route, timeoutMs = 4000): Promise<Socket> =>
+export const dial = (route: Route, timeoutMs = 4000): Promise<RelayConn> =>
   route.kind === 'direct' ? dialDirect(route.host, route.port, timeoutMs) : dialThroughRelay(route.relay, route.deviceId)

@@ -60,10 +60,26 @@ export const MINUTES: readonly SessionMinutes[] = SESSION_MINUTES.map(m => m.val
 
 export const isSessionMinutes = (value: unknown): value is SessionMinutes => MINUTES.includes(value as SessionMinutes)
 
-/** host:port with a sane port, or ''. */
+/**
+ * A relay address, or '' when it is not one:
+ *   host:port            plain TCP (a VPS with the port open)
+ *   wss://host[/path]    WebSocket (Cloudflare Tunnel, an HTTPS proxy); https:// is taken as wss://
+ *   ws://host:port       WebSocket without TLS — for testing on one machine only
+ */
 export const normaliseRelay = (value: unknown): string => {
   const raw = text(value, 255)
   if (!raw) return ''
+  if (/^(wss?|https?):\/\//i.test(raw)) {
+    try {
+      const url = new URL(raw)
+      const secure = url.protocol === 'wss:' || url.protocol === 'https:'
+      if (!url.hostname || url.username || url.password) return ''
+      const path = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '')
+      return `${secure ? 'wss' : 'ws'}://${url.host}${path}${url.search}`
+    } catch {
+      return ''
+    }
+  }
   const match = /^([a-z0-9.-]+|\[[0-9a-f:]+\]):(\d{1,5})$/i.exec(raw)
   if (!match) return ''
   const port = Number(match[2])

@@ -4,10 +4,32 @@ copyright: Copyright © 2026 Featured App
 directories:
   buildResources: build
   output: release/${version}
+# ONLY the built app and package.json (plus production node_modules, which
+# electron-builder adds itself). Everything else — source, tests, docs, scripts,
+# .env, release/ — must never ship.
+#
+# The win:/mac: sections below have their own `files:` lists. A list with only
+# "!" rules counts as "everything except…", which used to override this one and
+# pack the whole project (including .env and old installers) into app.asar. So
+# every list here starts with the same two includes, and the exclusions below
+# are repeated as a safety net.
 files:
   - out/**
   - package.json
   - '!**/*.map'
+  - '!.env*'
+  - '!release/**'
+  - '!electron/**'
+  - '!shared/**'
+  - '!tests/**'
+  - '!tools/**'
+  - '!docs/**'
+  - '!scripts/**'
+  - '!native/**'
+  - '!resources/**'
+  - '!build/**'
+  - '!*.{ts,mjs,json,md,tsbuildinfo}'
+  - 'package.json'
   # Transcripts (transformers.js) in Node use onnxruntime-node only: the web
   # runtime is not loaded, and sharp (images) is replaced by a stand-in in
   # electron/main/transcriber/worker.ts.
@@ -38,6 +60,8 @@ extraResources:
 win:
   # Transcripts: only this platform's speech engine binaries.
   files:
+    - out/**
+    - package.json
     - '!node_modules/onnxruntime-node/bin/napi-v*/{darwin,linux}/**'
   # Remote Desktop: keyboard/mouse helper (PowerShell + SendInput). Found at <resources>/native.
   extraResources:
@@ -62,6 +86,8 @@ mac:
   # Transcripts: only this platform's speech engine binaries. onnxruntime-node
   # has no Intel (x64) Mac build, so Transcripts shows an error there.
   files:
+    - out/**
+    - package.json
     - '!node_modules/onnxruntime-node/bin/napi-v*/{win32,linux}/**'
   # Recorder: checks/asks for the "System Audio Recording" permission, and
   # Remote Desktop: keyboard/mouse helper (remote-input, CoreGraphics events)

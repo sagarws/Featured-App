@@ -142,7 +142,8 @@ On one network nothing leaves it and no server is used. To connect between
 networks (another office, another Wi-Fi or subnet, home ↔ office) every app
 registers with the **remote server** set in `REMOTE_SERVER`
 (`shared/constants/remote.ts`): the dependency-free relay for the control
-channel and coturn (STUN/TURN) for the video. Deploy both with
+channel — plain TCP (`host:47900`) or WebSocket (`wss://…`, works behind
+Cloudflare Tunnel) on the same port — and STUN/TURN for the video. Deploy both with
 [`tools/remote-relay/deploy`](../tools/remote-relay/deploy/README.md). Neither
 can decrypt sessions. Connect tries: found on this network → last known
 address (2.5 s) → relay. Settings → Network can point one computer elsewhere.

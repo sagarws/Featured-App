@@ -80,34 +80,37 @@ export const MIN_PASSWORD_LENGTH = 8
  * The Featured App remote server: how two computers on DIFFERENT networks
  * reach each other (another office, another Wi-Fi, home ↔ office).
  *
- *   relay  TCP — introduces the two computers and carries the encrypted
- *          control channel (tools/remote-relay/relay.ts).
- *   TURN   UDP/TCP — carries the video when the two cannot reach each other
- *          directly (coturn). Also answers STUN.
+ *   relay  connects the two apps and carries the encrypted control channel
+ *          (tools/remote-relay/relay.ts). Either
+ *            'wss://relay.example.com'  WebSocket — works behind Cloudflare Tunnel
+ *            'relay.example.com:47900'  plain TCP — a VPS with the port open
+ *   stun   lets the video find a direct path between the two networks.
+ *   turn   carries the video when there is no direct path (coturn on a VPS).
  *
- * Neither can read a session: it is end-to-end encrypted by the apps.
- * Deploy both with tools/remote-relay/deploy (see its README), then put the
- * server's public host name or IP in `host`. Empty = same-network only.
- *
- * On the same network the app still connects directly and never uses it.
- * Settings → Network (relay / TURN) overrides these on one computer.
+ * Neither can read a session: it is end-to-end encrypted by the apps. On the
+ * same network the app connects directly and never uses any of it.
+ * Remote Desktop → Settings → Network overrides relay / TURN on one computer,
+ * without a rebuild.
  */
 export interface RemoteServer {
-  host: string
-  relayPort: number
-  turnPort: number
-  turnUsername: string
-  turnCredential: string
+  /** '' = same-network only. */
+  relay: string
+  stun: readonly string[]
+  turn: { urls: readonly string[]; username: string; credential: string } | null
 }
 
 export const REMOTE_SERVER: Readonly<RemoteServer> = {
-  /** Public host name or IP of the server, e.g. 'remote.example.com'. Empty: not set up yet. */
-  host: '',
-  relayPort: 47900,
-  turnPort: 3478,
-  /** Must match `user=` in tools/remote-relay/deploy/turnserver.conf. */
-  turnUsername: 'featured',
-  turnCredential: ''
+  /*
+   * TESTING: a Cloudflare quick tunnel to the relay on the developer's Mac
+   * (`node tools/remote-relay/relay.ts 47900` + `cloudflared tunnel --url http://localhost:47900`).
+   * Works only while that Mac is on with both running, and the name changes
+   * every time the tunnel restarts. Replace with the real server before release.
+   */
+  relay: 'wss://adjustable-myth-sounds-night.trycloudflare.com',
+  // Cloudflare's free public STUN.
+  stun: ['stun:stun.cloudflare.com:3478'],
+  // With a VPS: { urls: ['turn:IP:3478?transport=udp', 'turn:IP:3478?transport=tcp'], username: 'featured', credential: '…' }
+  turn: null
 }
 
 /** How long to try a computer's last known LAN address before moving on (to the relay). */
