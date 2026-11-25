@@ -1,3 +1,4 @@
+import type { HistoryEntry } from '../shared/types/remote'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -167,5 +168,35 @@ describe('remember passwords setting', () => {
     expect(defaultRemoteSettings().rememberPasswords).toBe(true)
     expect(sanitiseRemoteSettings({ rememberPasswords: false }).rememberPasswords).toBe(false)
     expect(sanitiseRemoteSettings({ rememberPasswords: 'no' }).rememberPasswords).toBe(true)
+  })
+})
+
+describe('groupHistory', () => {
+  it('shows each device once per direction with its newest entry and a count', async () => {
+    const { groupHistory } = await import('../shared/utils/remote')
+    const e = (over: Partial<HistoryEntry>): HistoryEntry => ({
+      at: 0,
+      direction: 'outgoing',
+      event: 'connected',
+      peerId: '19304289',
+      peerName: 'PC',
+      address: '',
+      detail: '',
+      ...over
+    })
+    const groups = groupHistory([
+      e({ at: 50, event: 'ended' }),
+      e({ at: 40 }),
+      e({ at: 30, peerId: 'WD-019-304-289' }),
+      e({ at: 20, direction: 'incoming' }),
+      e({ at: 10, peerId: '', peerName: '10.0.0.5' }),
+      e({ at: 5, peerId: '', peerName: '10.0.0.5' })
+    ])
+    expect(groups.map(g => [g.latest.at, g.count])).toEqual([
+      [50, 3],
+      [20, 1],
+      [10, 2]
+    ])
+    expect(groups[0]?.latest.event).toBe('ended')
   })
 })

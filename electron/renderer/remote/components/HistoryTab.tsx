@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Box, Button, Chip, IconButton, Paper, Stack, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, FormControlLabel, IconButton, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, Typography } from '@mui/material'
 import { KeyOutlined, ReplayOutlined } from '@mui/icons-material'
 import type { HistoryEntry, RemoteStatus } from '@shared/types/remote'
-import { parseDeviceId } from '@shared/utils/remote'
+import { groupHistory, parseDeviceId } from '@shared/utils/remote'
 
 const TONE: Partial<Record<HistoryEntry['event'], 'success' | 'error' | 'warning' | 'info'>> = {
   connected: 'success',
@@ -17,11 +17,17 @@ const TONE: Partial<Record<HistoryEntry['event'], 'success' | 'error' | 'warning
   expired: 'warning'
 }
 
-/** The audit log: every request, login attempt, session and transfer, both directions. */
+/**
+ * Connection history. By default one row per device and direction (its
+ * latest event, how many times, Reconnect with the saved password); "All
+ * events" shows the full audit log: every request, login attempt, session
+ * and transfer.
+ */
 const HistoryTab = ({ status, onReconnect }: { status: RemoteStatus; onReconnect: (id: string) => void }) => {
   const api = window.printAgent.remote
   const withPassword = new Set(status.savedPasswords)
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
+  const [allEvents, setAllEvents] = useState(false)
 
   const load = useCallback(() => void api.history().then(r => r.ok && setEntries(r.value)), [api])
 
@@ -38,9 +44,14 @@ const HistoryTab = ({ status, onReconnect }: { status: RemoteStatus; onReconnect
             Connection history
           </Typography>
           <Typography variant='body2' color='text.secondary'>
-            The last 500 events, newest first. Kept on this computer only.
+            {allEvents ? 'Every event (the last 500), newest first.' : 'Each device once, with its latest event. Reconnect uses the saved password when there is one.'} Kept on this computer only.
           </Typography>
         </Box>
+        <FormControlLabel
+          control={<Switch size='small' checked={allEvents} onChange={e => setAllEvents(e.target.checked)} />}
+          label='All events'
+          sx={{ mr: 2 }}
+        />
         <Button size='small' color='error' onClick={() => void api.clearHistory().then(load)}>
           Clear
         </Button>
@@ -53,7 +64,7 @@ const HistoryTab = ({ status, onReconnect }: { status: RemoteStatus; onReconnect
         <Table size='small'>
           <TableHead>
             <TableRow>
-              <TableCell>When</TableCell>
+              <TableCell>{allEvents ? 'When' : 'Last'}</TableCell>
               <TableCell>Direction</TableCell>
               <TableCell>Event</TableCell>
               <TableCell>Device</TableCell>
@@ -62,7 +73,7 @@ const HistoryTab = ({ status, onReconnect }: { status: RemoteStatus; onReconnect
             </TableRow>
           </TableHead>
           <TableBody>
-            {entries.map((e, i) => {
+            {(allEvents ? entries.map(latest => ({ latest, count: 1 })) : groupHistory(entries)).map(({ latest: e, count }, i) => {
               // Older entries hold the 9-digit form (WD-019-304-289): look them up by the 8-digit ID.
               const id = e.direction === 'outgoing' && e.peerId ? parseDeviceId(e.peerId) : null
               return (
@@ -70,7 +81,14 @@ const HistoryTab = ({ status, onReconnect }: { status: RemoteStatus; onReconnect
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{new Date(e.at).toLocaleString()}</TableCell>
                   <TableCell>{e.direction === 'incoming' ? 'To this PC' : 'From this PC'}</TableCell>
                   <TableCell>
-                    <Chip size='small' variant='tonal' color={TONE[e.event] ?? 'default'} label={e.event} />
+                    <Stack direction='row' spacing={1} alignItems='center'>
+                      <Chip size='small' variant='tonal' color={TONE[e.event] ?? 'default'} label={e.event} />
+                      {count > 1 && (
+                        <Typography variant='caption' color='text.secondary' sx={{ whiteSpace: 'nowrap' }}>
+                          {count} times
+                        </Typography>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     {e.peerName || '—'}
