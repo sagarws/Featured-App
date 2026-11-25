@@ -81,18 +81,22 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
       </Section>
 
       <Section
-        title='Lock screen access (Windows)'
-        subtitle='Lets a full-control session see this computer’s lock screen and unlock it (type the Windows password or PIN), and keeps the picture working when another remote tool locks the screen — without AnyDesk.'
+        title='Lock screen access'
+        subtitle='Lets a full-control session see this computer’s lock screen and unlock it (type the password or PIN), and keeps the picture working when another remote tool locks the screen — without AnyDesk.'
       >
         {status.secureAgent === 'unsupported' ? (
           <Typography variant='body2' color='text.secondary' sx={{ py: 1.5 }}>
-            Windows only. macOS and Linux do not allow remote apps to use the lock screen; the viewer shows that the computer is locked, and the picture returns after someone unlocks it.
+            Not available on this system (Linux lock screens vary). The viewer shows that the computer is locked, and the picture returns after someone unlocks it.
           </Typography>
         ) : (
           <>
             <Row
               title={status.secureAgent === 'running' ? 'On' : 'Off'}
-              hint='Installs a small SYSTEM agent (like AnyDesk’s service) once, with an administrator prompt. It acts only while this computer is locked and never on UAC prompts or an unlocked desktop.'
+              hint={
+                status.identity.platform === 'darwin'
+                  ? 'Built in on macOS: uses the Screen Recording and control permissions from “Set up remote control”. Nothing to install; acts only while this Mac is locked and only for full-control sessions.'
+                  : 'Installs a small SYSTEM agent (like AnyDesk’s service) once, with an administrator prompt. It acts only while this computer is locked and never on UAC prompts or an unlocked desktop.'
+              }
             >
               {status.secureAgent === 'running' ? (
                 <Button size='small' color='error' disabled={agentBusy} onClick={() => void agent(false)}>
@@ -100,12 +104,14 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
                 </Button>
               ) : (
                 <Button size='small' variant='contained' disabled={agentBusy} onClick={() => void agent(true)}>
-                  {agentBusy ? 'Waiting for approval…' : 'Turn on'}
+                  {agentBusy && status.identity.platform !== 'darwin' ? 'Waiting for approval…' : 'Turn on'}
                 </Button>
               )}
             </Row>
             <Typography variant='caption' color='text.secondary' sx={{ pt: 1 }}>
-              Works once someone has signed in to Windows (the app runs in that session). After a restart, sign in once — or enable automatic sign-in — before connecting.
+              {status.identity.platform === 'darwin'
+                ? 'Works for a locked Mac (someone signed in, then locked it or it went to sleep). After a restart, sign in once — or turn on automatic login — before connecting.'
+                : 'Works once someone has signed in to Windows (the app runs in that session). After a restart, sign in once — or enable automatic sign-in — before connecting.'}
             </Typography>
           </>
         )}

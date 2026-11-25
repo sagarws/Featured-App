@@ -1,7 +1,7 @@
 {
   "name": "featured-app",
   "productName": "Featured App",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Featured App: screen, webcam and audio recording, plus silent printing to this machine's printers.",
   "license": "UNLICENSED",
   "author": "Featured App",

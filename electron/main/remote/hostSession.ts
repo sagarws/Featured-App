@@ -216,6 +216,9 @@ export class HostSession {
       this.send({ t: 'displays', displays: remoteDisplays(), current: this.displayId })
       this.ctx.injector.releaseAll()
     } else if (state.kind === 'error' && state.message) {
+      // Locked with lock-screen access: the normal capture is expected to fail
+      // (the lock screen is sent as pictures instead), so no warning.
+      if (this.locked && this.ctx.secure.available()) return
       this.send({ t: 'notice', message: state.message.slice(0, 300) })
     }
   }

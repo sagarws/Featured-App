@@ -649,7 +649,9 @@ const Viewer = () => {
                 <Typography sx={{ color: 'rgba(255,255,255,.7)', fontSize: 14 }}>
                   {secureAgent
                     ? 'Loading its lock screen…'
-                    : 'To see and unlock it from here, turn on "Lock screen access" on that computer once (Remote Desktop → Security, Windows, needs administrator approval). Until then someone there has to unlock it; the picture comes back by itself.'}
+                    : config?.peerPlatform === 'darwin'
+                      ? 'To see and unlock it from here, update Featured App on that Mac and keep "Unlock the lock screen remotely" on (Remote Desktop → Security), with Screen Recording and control allowed. Until then someone there has to unlock it; the picture comes back by itself.'
+                      : 'To see and unlock it from here, turn on "Lock screen access" on that computer once (Remote Desktop → Security; Windows asks for administrator approval). Until then someone there has to unlock it; the picture comes back by itself.'}
                 </Typography>
               </Stack>
             )}

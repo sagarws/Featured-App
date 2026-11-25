@@ -26,7 +26,15 @@ const HELPERS = [
   // standalone helper is the fallback; the .node module runs the same code in
   // the app's own process, so macOS asks for the permission once, for the app.
   { name: 'remote-input', source: 'native/mac/remote-input.c', frameworks: ['ApplicationServices', 'CoreFoundation'] },
-  { name: 'remote-input.node', source: 'native/mac/remote-input.c', frameworks: ['ApplicationServices', 'CoreFoundation'], addon: true }
+  // …plus the lock-screen picture (remote-capture.m: ScreenCaptureKit / CoreGraphics → JPEG).
+  {
+    name: 'remote-input.node',
+    source: 'native/mac/remote-input.c',
+    extra: ['native/mac/remote-capture.m'],
+    frameworks: ['ApplicationServices', 'CoreFoundation', 'CoreGraphics', 'Foundation', 'ImageIO'],
+    weakFrameworks: ['ScreenCaptureKit'],
+    addon: true
+  }
 ]
 
 /** node_api.h: the headers of the Node running this script (Node-API is ABI-stable, so any recent one fits Electron). */
@@ -39,7 +47,8 @@ mkdirSync(OUT, { recursive: true })
 for (const helper of HELPERS) {
   const src = join(ROOT, helper.source)
   const out = join(OUT, helper.name)
-  if (!force && existsSync(out) && statSync(out).mtimeMs >= statSync(src).mtimeMs) continue
+  const sources = [src, ...(helper.extra ?? []).map(file => join(ROOT, file))]
+  if (!force && existsSync(out) && sources.every(file => statSync(out).mtimeMs >= statSync(file).mtimeMs)) continue
   const args = ['-O2', '-fblocks', '-Wall', '-arch', 'arm64', '-arch', 'x86_64', '-mmacosx-version-min=11.0']
   if (helper.addon) {
     const include = nodeApiInclude()
@@ -51,6 +60,9 @@ for (const helper of HELPERS) {
     args.push('-bundle', '-undefined', 'dynamic_lookup', '-DREMOTE_INPUT_ADDON', '-DNODE_GYP_MODULE_NAME=remote_input', '-I', include)
   }
   for (const fw of helper.frameworks) args.push('-framework', fw)
-  execFileSync('clang', [...args, '-o', out, src], { stdio: 'inherit' })
+  // Weak: ScreenCaptureKit is macOS 12.3+, the app runs on 11.
+  for (const fw of helper.weakFrameworks ?? []) args.push('-weak_framework', fw)
+  if (helper.extra) args.push('-fobjc-arc')
+  execFileSync('clang', [...args, '-o', out, ...sources], { stdio: 'inherit' })
   console.log(`built ${out}`)
 }

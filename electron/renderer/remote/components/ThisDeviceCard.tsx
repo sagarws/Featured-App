@@ -140,9 +140,13 @@ const ThisDeviceCard = ({ status }: { status: RemoteStatus }) => {
           <Row
             title='Unlock the lock screen remotely'
             hint={
-              status.secureAgent === 'running'
-                ? 'On. A full-control session can see the Windows lock screen and type the password or PIN.'
-                : 'Off. Turn on to let a full-control session unlock this PC (asks for administrator approval once).'
+              status.identity.platform === 'darwin'
+                ? status.secureAgent === 'running'
+                  ? 'On. A full-control session can see the Mac lock screen and type your password. Built in, nothing to install.'
+                  : 'Off. Turn on to let a full-control session unlock this Mac.'
+                : status.secureAgent === 'running'
+                  ? 'On. A full-control session can see the Windows lock screen and type the password or PIN.'
+                  : 'Off. Turn on to let a full-control session unlock this PC (asks for administrator approval once).'
             }
           >
             <Switch

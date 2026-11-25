@@ -14,9 +14,20 @@ import { keyFor } from './input/keymap'
  * only while the session is locked; this module installs / removes it (with an
  * administrator prompt) and talks to it.
  *
- * Other systems: macOS does not let any app see or type into the login window
- * remotely like this; Linux lock screens vary. Both report 'unsupported'.
+ * macOS: no agent and no install. The app itself (it has Screen Recording and
+ * the control permission) takes pictures of the lock screen with the system
+ * capture calls Chromium's capture does not use, and types the password with
+ * the same in-process keyboard/mouse code (input/injector.ts →
+ * remote-input.node). Linux lock screens vary: 'unsupported'.
  */
+
+/** macOS lock-screen access, provided by the input module (see InputInjector.macLockScreen). */
+export interface MacLockScreen {
+  frame(maxWidth: number, quality: number): Promise<SecureFrame | null>
+  /** Coordinates are 0–1 of the frame (= the main display). */
+  inject(event: InputEvent): void
+  releaseAll(): void
+}
 
 export type SecureAgentState = 'unsupported' | 'not-installed' | 'running'
 
@@ -43,7 +54,15 @@ export class SecureDesktop {
   private connecting: Promise<Socket | null> | null = null
   private buffer = ''
   private waiting: ((line: string) => void)[] = []
-  private state: SecureAgentState = process.platform === 'win32' ? 'not-installed' : 'unsupported'
+  private state: SecureAgentState
+
+  constructor(
+    private readonly mac: MacLockScreen | null = null,
+    /** macOS: the "unlock remotely" setting (on by default; nothing to install). */
+    private readonly macEnabled: (value?: boolean) => boolean = () => true
+  ) {
+    this.state = process.platform === 'win32' ? 'not-installed' : process.platform === 'darwin' && mac ? (macEnabled() ? 'running' : 'not-installed') : 'unsupported'
+  }
 
   agentState(): SecureAgentState {
     return this.state
@@ -117,7 +136,8 @@ export class SecureDesktop {
 
   /** Is the agent there, and is this Windows session locked? */
   async refresh(): Promise<{ state: SecureAgentState; locked: boolean | null }> {
-    if (process.platform !== 'win32') return { state: 'unsupported', locked: null }
+    // macOS: lock state comes from powerMonitor; nothing to ask.
+    if (process.platform !== 'win32') return { state: this.state, locked: null }
     const reply = await this.ask('status', 2000)
     this.state = reply === 'locked' || reply === 'unlocked' ? 'running' : 'not-installed'
     return { state: this.state, locked: reply === 'locked' ? true : reply === 'unlocked' ? false : null }
@@ -126,6 +146,7 @@ export class SecureDesktop {
   /** The lock screen as JPEG (whole virtual screen), or null when not locked / no agent. */
   async frame(maxWidth: number, quality: number): Promise<SecureFrame | null> {
     if (!this.available()) return null
+    if (this.mac) return this.mac.frame(maxWidth, quality)
     const reply = await this.ask(`frame ${Math.round(maxWidth)} ${Math.round(quality)}`, 5000)
     const m = /^frame (\d+) (\d+) ([A-Za-z0-9+/=]+)$/.exec(reply)
     if (!m) return null
@@ -135,6 +156,7 @@ export class SecureDesktop {
   /** Input for the lock screen. Coordinates are 0–1 of the frame (= the whole virtual screen). */
   inject(event: InputEvent): void {
     if (!this.available()) return
+    if (this.mac) return this.mac.inject(event)
     const n = (v: number): string => v.toFixed(5)
     switch (event.k) {
       case 'mm':
@@ -158,16 +180,25 @@ export class SecureDesktop {
   }
 
   sendCtrlAltDel(): void {
-    if (this.available()) this.tell('sas')
+    if (this.available() && !this.mac) this.tell('sas')
   }
 
   releaseAll(): void {
-    if (this.available()) this.tell('r')
+    if (!this.available()) return
+    if (this.mac) this.mac.releaseAll()
+    else this.tell('r')
   }
 
   /** Install (or update) and start the agent. Shows the Windows administrator prompt. */
   async install(): Promise<void> {
-    if (process.platform !== 'win32') throw new Error('Lock screen access is available on Windows only.')
+    if (process.platform === 'darwin') {
+      // Built in on macOS: "installing" is switching the setting on.
+      if (!this.mac) throw new Error('Lock screen access needs the input module of this app.')
+      this.macEnabled(true)
+      this.state = 'running'
+      return
+    }
+    if (process.platform !== 'win32') throw new Error('Lock screen access is not available on this system.')
     const src = agentSources()
     for (const file of ['remote-secure-agent.ps1', 'RemoteSecureAgent.cs']) {
       if (!existsSync(join(src, file))) throw new Error(`The agent file ${file} is missing from this install.`)
@@ -200,6 +231,11 @@ Start-ScheduledTask -TaskName ${psString(TASK)}
 
   /** Stop and remove the agent. Shows the administrator prompt. */
   async uninstall(): Promise<void> {
+    if (process.platform === 'darwin' && this.mac) {
+      this.macEnabled(false)
+      this.state = 'not-installed'
+      return
+    }
     if (process.platform !== 'win32') return
     this.socket?.destroy()
     await runElevated(`

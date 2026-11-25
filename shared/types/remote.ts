@@ -39,6 +39,8 @@ export interface RemoteSettings {
   controlDisabled: boolean
   /** Clipboard text may move between this computer and the other one. */
   clipboardSync: boolean
+  /** macOS: a full-control session may see and unlock the lock screen (built in, no install). */
+  macLockScreen: boolean
   incomingFiles: IncomingFilePolicy
   /** For 'trusted-folder'; '' = Downloads/Remote Transfers. */
   trustedFolder: string

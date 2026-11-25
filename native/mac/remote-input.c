@@ -218,6 +218,61 @@ static napi_value JsTrusted(napi_env env, napi_callback_info info) {
   return result;
 }
 
+/* ── lock screen picture (remote-capture.m), off the main thread ── */
+int remoteCaptureJpeg(int maxWidth, int quality, unsigned char **jpeg, size_t *length, int *width, int *height);
+
+typedef struct {
+  napi_async_work work;
+  napi_deferred deferred;
+  int maxWidth, quality, width, height, status;
+  unsigned char *jpeg;
+  size_t length;
+} CaptureJob;
+
+static void captureExecute(napi_env env, void *data) {
+  CaptureJob *job = data;
+  job->status = remoteCaptureJpeg(job->maxWidth, job->quality, &job->jpeg, &job->length, &job->width, &job->height);
+}
+
+static void captureComplete(napi_env env, napi_status status, void *data) {
+  CaptureJob *job = data;
+  napi_value result;
+  if (status == napi_ok && job->status == 0 && job->jpeg) {
+    napi_value buffer, value;
+    void *bytes = NULL;
+    napi_create_object(env, &result);
+    napi_create_buffer_copy(env, job->length, job->jpeg, &bytes, &buffer);
+    napi_set_named_property(env, result, "jpeg", buffer);
+    napi_create_int32(env, job->width, &value);
+    napi_set_named_property(env, result, "width", value);
+    napi_create_int32(env, job->height, &value);
+    napi_set_named_property(env, result, "height", value);
+  } else {
+    napi_get_null(env, &result);
+  }
+  napi_resolve_deferred(env, job->deferred, result);
+  napi_delete_async_work(env, job->work);
+  free(job->jpeg);
+  free(job);
+}
+
+/* captureJpeg(maxWidth, quality): Promise<{ jpeg, width, height } | null> — the main display. */
+static napi_value JsCaptureJpeg(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2], promise, name;
+  napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+  CaptureJob *job = calloc(1, sizeof *job);
+  job->maxWidth = 1600;
+  job->quality = 60;
+  if (argc >= 1) napi_get_value_int32(env, argv[0], &job->maxWidth);
+  if (argc >= 2) napi_get_value_int32(env, argv[1], &job->quality);
+  napi_create_promise(env, &job->deferred, &promise);
+  napi_create_string_utf8(env, "remoteCapture", NAPI_AUTO_LENGTH, &name);
+  napi_create_async_work(env, NULL, name, captureExecute, captureComplete, job, &job->work);
+  napi_queue_async_work(env, job->work);
+  return promise;
+}
+
 /* Screen Recording: ask (shows the system prompt once; true = already allowed). */
 static napi_value JsRequestScreen(napi_env env, napi_callback_info info) {
   napi_value result;
@@ -234,6 +289,8 @@ static napi_value Init(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "trusted", fn);
   napi_create_function(env, "requestScreen", NAPI_AUTO_LENGTH, JsRequestScreen, NULL, &fn);
   napi_set_named_property(env, exports, "requestScreen", fn);
+  napi_create_function(env, "captureJpeg", NAPI_AUTO_LENGTH, JsCaptureJpeg, NULL, &fn);
+  napi_set_named_property(env, exports, "captureJpeg", fn);
   return exports;
 }
 

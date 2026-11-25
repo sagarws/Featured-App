@@ -4,6 +4,7 @@ import { release } from 'node:os'
 import { join } from 'node:path'
 import { app, screen, systemPreferences, type Display } from 'electron'
 import type { InputEvent, PermissionStatus } from '@shared/types/remote'
+import type { MacLockScreen } from '../secureDesktop'
 import { logger } from '../../logger'
 import { platform } from '../store'
 import { toHostPoint } from './geometry'
@@ -31,6 +32,8 @@ interface InputModule {
   trusted(prompt: boolean): boolean
   /** Screen Recording prompt; true when already allowed. */
   requestScreen(): boolean
+  /** The main display as JPEG, also at the lock screen. */
+  captureJpeg(maxWidth: number, quality: number): Promise<{ jpeg: Buffer; width: number; height: number } | null>
 }
 
 /**
@@ -187,6 +190,24 @@ export class InputInjector {
     if (process.platform !== 'darwin') return
     if (this.module) this.module.trusted(true)
     else systemPreferences.isTrustedAccessibilityClient(true)
+  }
+
+  /**
+   * macOS lock-screen access (secureDesktop.ts): pictures of the locked screen
+   * and input onto it, both from this process. Null without the input module.
+   */
+  macLockScreen(): MacLockScreen | null {
+    const mod = this.module
+    if (!mod || typeof mod.captureJpeg !== 'function') return null
+    return {
+      frame: async (maxWidth, quality) => {
+        const shot = await mod.captureJpeg(maxWidth, quality)
+        return shot ? { width: shot.width, height: shot.height, jpeg: shot.jpeg } : null
+      },
+      // The lock screen is on the main display; its frame is that display.
+      inject: event => this.inject(event, screen.getPrimaryDisplay()),
+      releaseAll: () => this.releaseAll()
+    }
   }
 
   /** macOS: ask for Screen Recording for this app (the system prompt shows once; later, Settings). */

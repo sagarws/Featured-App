@@ -51,7 +51,11 @@ const attempts = new Map<string, AbortController>()
 const limiter = new AuthLimiter()
 const requestCounter = new WindowCounter(3, 60_000)
 const injector = new InputInjector()
-const secure = new SecureDesktop()
+// macOS: lock-screen access is built in (pictures + input from the app itself).
+const secure = new SecureDesktop(injector.macLockScreen(), value => {
+  if (value !== undefined) store.updateRemoteSettings({ macLockScreen: value })
+  return store.getRemoteSettings().macLockScreen
+})
 /** This computer's screen is locked (OS events, confirmed by the Windows agent when installed). */
 let hostLocked = false
 let lockPoll: NodeJS.Timeout | null = null
