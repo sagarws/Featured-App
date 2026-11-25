@@ -52,10 +52,25 @@ systemctl restart coturn
 echo "== Relay"
 UPLOADED="$HERE/../relay.ts"
 if command -v pm2 >/dev/null && pm2 describe featured-relay >/dev/null 2>&1; then
-  SCRIPT="$(pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s).find(p=>p.name==="featured-relay");process.stdout.write(p?.pm2_env?.pm_exec_path??"")})')"
-  if [ -f "$UPLOADED" ] && [ -n "$SCRIPT" ] && [ "$(realpath "$UPLOADED")" != "$(realpath "$SCRIPT")" ]; then
+  # The relay.ts pm2 runs: the script itself (pm2 start relay.ts …), or an
+  # argument (pm2 start node -- relay.ts …, where the script is node). Never
+  # anything that is not a file named relay.ts.
+  SCRIPT="$(pm2 jlist | node -e '
+    const path = require("node:path")
+    let s = ""
+    process.stdin.on("data", d => (s += d)).on("end", () => {
+      const p = JSON.parse(s).find(p => p.name === "featured-relay")?.pm2_env ?? {}
+      const args = Array.isArray(p.args) ? p.args : String(p.args ?? "").split(" ")
+      const hit = [p.pm_exec_path, ...args].find(a => typeof a === "string" && path.basename(a) === "relay.ts")
+      process.stdout.write(hit ? path.resolve(p.pm_cwd ?? process.cwd(), hit) : "")
+    })')"
+  if [ -z "$SCRIPT" ] || [ "$(basename "$SCRIPT")" != relay.ts ]; then
+    echo "could not tell which relay.ts pm2 runs; restarting it as it is (update that relay.ts yourself)"
+  elif [ -f "$UPLOADED" ] && [ "$(realpath "$UPLOADED")" != "$(realpath "$SCRIPT")" ]; then
     cp "$UPLOADED" "$SCRIPT"
     echo "updated $SCRIPT"
+  else
+    echo "pm2 runs $SCRIPT (already this one)"
   fi
   set -a; . "$ENV_FILE"; set +a
   pm2 restart featured-relay --update-env >/dev/null
