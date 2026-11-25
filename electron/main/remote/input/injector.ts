@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { release } from 'node:os'
 import { join } from 'node:path'
 import { app, screen, systemPreferences, type Display } from 'electron'
 import type { InputEvent, PermissionStatus } from '@shared/types/remote'
@@ -7,6 +8,13 @@ import { logger } from '../../logger'
 import { platform } from '../store'
 import { toHostPoint } from './geometry'
 import { keyFor } from './keymap'
+
+/**
+ * Where macOS keeps the "control this Mac" switch. macOS 27 (Darwin 27)
+ * renamed Accessibility to "Device Control and Data Access".
+ */
+export const macControlPane = (darwinMajor = Number(release().split('.')[0])): string =>
+  darwinMajor >= 27 ? 'Device Control and Data Access' : 'Accessibility'
 
 /*
  * Keyboard and mouse on the host. A small long-running helper per OS does the
@@ -124,7 +132,7 @@ export class InputInjector {
       this.status = 'denied'
       this.detail =
         process.platform === 'darwin'
-          ? 'Allow this app under System Settings → Privacy & Security → Accessibility, then restart the session.'
+          ? `Allow Featured App under System Settings → Privacy & Security → ${macControlPane()} (switch on both "Featured App" entries; one is its keyboard/mouse helper), then restart the session.`
           : answer.slice('untrusted'.length).trim() || 'Keyboard/mouse control is not available.'
     } else if (this.status !== 'unsupported') {
       this.status = 'unknown'

@@ -486,3 +486,11 @@ describe('relay (outside the office network)', () => {
     expect(state).toMatch(/^error:.*refused/i)
   })
 })
+
+describe('macOS control permission name', () => {
+  it('uses the pane name of the running macOS', async () => {
+    const { macControlPane } = await import('../electron/main/remote/input/injector')
+    expect(macControlPane(26)).toBe('Accessibility')
+    expect(macControlPane(27)).toBe('Device Control and Data Access')
+  })
+})

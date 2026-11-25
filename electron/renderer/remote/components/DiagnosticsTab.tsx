@@ -76,7 +76,7 @@ const DiagnosticsTab = ({ status }: { status: RemoteStatus }) => {
             </Button>
           )}
         </Row>
-        <Row title='Keyboard and mouse control' hint={p.inputDetail ?? (platform === 'darwin' ? 'macOS → Privacy & Security → Accessibility' : platform === 'linux' ? 'X11 sessions only; Wayland allows view only.' : 'Works for normal windows; not for admin windows or the secure desktop.')}>
+        <Row title='Keyboard and mouse control' hint={p.inputDetail ?? (platform === 'darwin' ? 'macOS → Privacy & Security → Device Control and Data Access (Accessibility before macOS 27)' : platform === 'linux' ? 'X11 sessions only; Wayland allows view only.' : 'Works for normal windows; not for admin windows or the secure desktop.')}>
           {chip(p.input)}
           {platform === 'darwin' && p.input !== 'granted' && (
             <>
