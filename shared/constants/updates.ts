@@ -11,7 +11,9 @@
  * updates are not available instead of checking someone else's installer.
  *
  * Each entry names the installer the link must point at, so a mixed-up link
- * (a .dmg handed to Windows) is refused before anything is run.
+ * (a .dmg handed to Windows) is refused before anything is run. The build
+ * names every installer <softwareName>.<installer> (scripts/name-installers.cjs),
+ * so the file to upload matches its entry here.
  */
 
 export const UPDATE_API_BASE = 'https://check-otp-khaki.vercel.app/api/software'
@@ -43,7 +45,7 @@ const feed = (softwareName: string, installer: InstallerKind): UpdateFeed => ({
 })
 
 export const UPDATE_FEEDS: Record<UpdateTarget, UpdateFeed | null> = {
-  /** Windows 64-bit (Intel/AMD). Installer: Featured-App-x64-setup.exe */
+  /** Windows 64-bit (Intel/AMD). Installer: Featured-App-x64.exe */
   'win32-x64': feed('Featured-App-x64', 'exe'),
   /** Windows 32-bit. Not published yet. */
   'win32-ia32': null,
@@ -52,10 +54,10 @@ export const UPDATE_FEEDS: Record<UpdateTarget, UpdateFeed | null> = {
   /** Mac, Apple Silicon (M1 and later). Installer: Featured-App-arm64.dmg */
   'darwin-arm64': feed('Featured-App-arm64', 'dmg'),
   /**
-   * Mac, Intel (2019 and older MacBooks). Installer: Featured-App-x64.dmg.
+   * Mac, Intel (2019 and older MacBooks). Installer: Featured-App-mac-pro-x64.dmg.
    * Its own name in check-otp — "Featured-App-x64" is the Windows installer.
    */
-  'darwin-x64': feed('Featured-App-mac-x64', 'dmg'),
+  'darwin-x64': feed('Featured-App-mac-pro-x64', 'dmg'),
   /** Linux. Not published yet. */
   'linux-x64': null,
   'linux-arm64': null

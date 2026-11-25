@@ -43,6 +43,9 @@ asar: true
 npmRebuild: false
 # Refuses to package without this target's bundled ffmpeg (scripts/check-ffmpeg.cjs).
 beforePack: scripts/check-ffmpeg.cjs
+# Installers are renamed to their UPDATE_FEEDS name (shared/constants/updates.ts):
+# Featured-App-x64.exe, Featured-App-arm64.dmg, Featured-App-mac-pro-x64.dmg.
+afterAllArtifactBuild: scripts/name-installers.cjs
 # SumatraPDF.exe cannot be executed from inside app.asar. The main process
 # points pdf-to-printer at the unpacked copy (see electron/main/print/windows.ts).
 # onnxruntime's .node and its shared library must be real files on disk too.

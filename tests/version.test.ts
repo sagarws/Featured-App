@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compareVersions, directDownloadUrl, parseUpdateInfo } from '@shared/utils/version'
-import { updateFeedFor } from '@shared/constants/updates'
+import { UPDATE_FEEDS, updateFeedFor } from '@shared/constants/updates'
 
 describe('compareVersions', () => {
   it('orders by each number, not as text', () => {
@@ -64,7 +64,26 @@ describe('updateFeedFor', () => {
     expect(updateFeedFor('darwin', 'arm64')).toMatchObject({ softwareName: 'Featured-App-arm64', installer: 'dmg' })
     expect(updateFeedFor('darwin', 'arm64')?.url).toBe('https://check-otp-khaki.vercel.app/api/software/Featured-App-arm64')
     expect(updateFeedFor('win32', 'ia32')).toBeNull()
-    expect(updateFeedFor('darwin', 'x64')).toMatchObject({ softwareName: 'Featured-App-mac-x64', installer: 'dmg' })
+    expect(updateFeedFor('darwin', 'x64')).toMatchObject({ softwareName: 'Featured-App-mac-pro-x64', installer: 'dmg' })
     expect(updateFeedFor('linux', 'x64')).toBeNull()
+  })
+})
+
+describe('installer names (scripts/name-installers.cjs)', () => {
+  it('names every built installer exactly like its UPDATE_FEEDS entry', async () => {
+    const { createRequire } = await import('node:module')
+    const req = createRequire(import.meta.url)
+    const naming = req('../scripts/name-installers.cjs') as {
+      feeds: () => Record<string, { name: string; installer: string }>
+      renamedPath: (file: string, table: Record<string, { name: string; installer: string }>) => string | null
+    }
+    const table = naming.feeds()
+    for (const [target, feed] of Object.entries(UPDATE_FEEDS)) {
+      if (feed) expect(table[target]).toEqual({ name: feed.softwareName, installer: feed.installer })
+    }
+    expect(naming.renamedPath('/r/2.0.0/Featured-App-x64-setup.exe', table)).toBe('/r/2.0.0/Featured-App-x64.exe')
+    expect(naming.renamedPath('/r/2.0.0/Featured-App-arm64.dmg', table)).toBeNull()
+    expect(naming.renamedPath('/r/2.0.0/Featured-App-x64.dmg', table)).toBe('/r/2.0.0/Featured-App-mac-pro-x64.dmg')
+    expect(naming.renamedPath('/r/2.0.0/Featured-App-ia32-setup.exe', table)).toBeNull()
   })
 })
