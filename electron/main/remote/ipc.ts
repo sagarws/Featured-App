@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { REMOTE_IPC } from '@shared/constants/channels'
 import type { Result } from '@shared/types/agent'
 import type { ConnectRequest, QualityPreset, RemotePermission, RemoteSettings } from '@shared/types/remote'
@@ -167,6 +167,11 @@ export const registerRemoteIpc = (): void => {
     await shell.openExternal(url)
   })
   handle(REMOTE_IPC.requestAccessibility, ['main'], () => service.requestInputPermission())
+  handle(REMOTE_IPC.setupPermissions, ['main'], () => service.setupMacPermissions())
+  handle(REMOTE_IPC.relaunch, ['main'], () => {
+    app.relaunch()
+    app.exit(0)
+  })
   handle(REMOTE_IPC.installSecureAgent, ['main'], () => service.installSecureAgent())
   handle(REMOTE_IPC.removeSecureAgent, ['main'], () => service.removeSecureAgent())
   handle(REMOTE_IPC.chooseTrustedFolder, ['main'], async event => {

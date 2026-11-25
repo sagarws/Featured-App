@@ -166,6 +166,10 @@ export const REMOTE_IPC = {
   diagnostics: 'remote:diagnostics',
   openPrivacy: 'remote:open-privacy',
   requestAccessibility: 'remote:request-accessibility',
+  /** macOS one-time setup: ask for Screen Recording and keyboard/mouse control together. */
+  setupPermissions: 'remote:setup-permissions',
+  /** Restart the app (macOS applies Screen Recording only to a fresh start). */
+  relaunch: 'remote:relaunch',
   chooseTrustedFolder: 'remote:choose-trusted-folder',
   sendFiles: 'remote:send-files',
   installSecureAgent: 'remote:install-secure-agent',

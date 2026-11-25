@@ -8,6 +8,7 @@ import SecurityTab from './components/SecurityTab'
 import SessionsTab from './components/SessionsTab'
 import SettingsTab from './components/SettingsTab'
 import ThisDeviceCard from './components/ThisDeviceCard'
+import MacSetupCard from './components/MacSetupCard'
 import { useRemoteStatus } from './hooks'
 
 type TabId = 'connect' | 'sessions' | 'settings' | 'security' | 'history' | 'diagnostics'
@@ -85,6 +86,7 @@ const RemoteDesktopPage = () => {
 
       {tab === 'connect' && (
         <Stack spacing={3}>
+          <MacSetupCard status={status} />
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
             <ThisDeviceCard status={status} />
             <ConnectCard status={status} target={target} onTarget={setTarget} reconnect={reconnect} onReconnectStarted={() => setReconnect(null)} />

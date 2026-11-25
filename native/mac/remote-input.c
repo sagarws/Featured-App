@@ -7,7 +7,15 @@
  * an authorised full-control session (electron/main/remote/input).
  *
  * Needs the Accessibility permission (System Settings → Privacy & Security →
- * Accessibility), which macOS attributes to the app that launched it.
+ * Accessibility; "Device Control and Data Access" on macOS 27+).
+ *
+ * Built two ways from this one file (scripts/build-native-mac.cjs):
+ *   remote-input.node  a Node-API module loaded INTO the app's main process
+ *                      (REMOTE_INPUT_ADDON). The app itself posts the events,
+ *                      so macOS asks for the permission once, for "Featured
+ *                      App" — not a second time for a separate helper.
+ *   remote-input       the same commands over stdin/stdout, a standalone
+ *                      helper: the fallback if the module cannot load.
  *
  *   m X Y            move to X,Y (global points, top-left of the main display)
  *   d B X Y C        button B down at X,Y; C = click count (2 = double click)
@@ -142,33 +150,107 @@ static void releaseAll(void) {
   for (int k = 0; k < 128; k++) if (keyDown[k]) key(k, 0);
 }
 
-int main(void) {
-  signal(SIGPIPE, SIG_IGN);
+static void setup(void) {
   source = CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
   /* Our own events must not be merged with a local user's, nor suppress local input. */
   CGEventSourceSetLocalEventsSuppressionInterval(source, 0.0);
   CGEventRef now = CGEventCreate(NULL);
   cursor = CGEventGetLocation(now);
   CFRelease(now);
+}
 
+/* One command; the answer for the ones that have one ("a", "p"), else NULL. */
+static const char *handle(const char *line) {
+  double x, y;
+  int b, c, code, down, dx, dy;
+  char hex[1100];
+  switch (line[0]) {
+    case 'm': if (sscanf(line + 1, "%lf %lf", &x, &y) == 2) mouseMove(x, y); break;
+    case 'd': if (sscanf(line + 1, "%d %lf %lf %d", &b, &x, &y, &c) == 4) mouseButton(b, x, y, c, 1); break;
+    case 'u': if (sscanf(line + 1, "%d %lf %lf %d", &b, &x, &y, &c) == 4) mouseButton(b, x, y, c, 0); break;
+    case 'w': if (sscanf(line + 1, "%d %d", &dx, &dy) == 2) scroll(dx, dy); break;
+    case 'k': if (sscanf(line + 1, "%d %d", &code, &down) == 2) key(code, down); break;
+    case 't': if (sscanf(line + 1, "%1024s", hex) == 1) injectText(hex); break;
+    case 'r': releaseAll(); break;
+    case 'a': return AXIsProcessTrusted() ? "trusted" : "untrusted";
+    case 'p': return "pong";
+    default: break;
+  }
+  return NULL;
+}
+
+#ifdef REMOTE_INPUT_ADDON
+#define NAPI_VERSION 8
+#include <node_api.h>
+
+/* handle(line: string): string | null — the same commands as the helper's stdin. */
+static napi_value JsHandle(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  napi_value result;
+  char line[2048];
+  size_t length = 0;
+  napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+  if (argc < 1 || napi_get_value_string_utf8(env, argv[0], line, sizeof line, &length) != napi_ok) {
+    napi_get_null(env, &result);
+    return result;
+  }
+  const char *answer = handle(line);
+  if (answer) napi_create_string_utf8(env, answer, NAPI_AUTO_LENGTH, &result);
+  else napi_get_null(env, &result);
+  return result;
+}
+
+/* Promptless check / the system prompt, for the one-time setup. */
+static napi_value JsTrusted(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  bool prompt = false;
+  napi_value result;
+  napi_get_cb_info(env, info, &argc, argv, NULL, NULL);
+  if (argc >= 1) napi_get_value_bool(env, argv[0], &prompt);
+  const void *keys[] = {kAXTrustedCheckOptionPrompt};
+  const void *values[] = {prompt ? kCFBooleanTrue : kCFBooleanFalse};
+  CFDictionaryRef options = CFDictionaryCreate(NULL, keys, values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  bool trusted = AXIsProcessTrustedWithOptions(options);
+  CFRelease(options);
+  napi_get_boolean(env, trusted, &result);
+  return result;
+}
+
+/* Screen Recording: ask (shows the system prompt once; true = already allowed). */
+static napi_value JsRequestScreen(napi_env env, napi_callback_info info) {
+  napi_value result;
+  napi_get_boolean(env, CGRequestScreenCaptureAccess(), &result);
+  return result;
+}
+
+static napi_value Init(napi_env env, napi_value exports) {
+  setup();
+  napi_value fn;
+  napi_create_function(env, "handle", NAPI_AUTO_LENGTH, JsHandle, NULL, &fn);
+  napi_set_named_property(env, exports, "handle", fn);
+  napi_create_function(env, "trusted", NAPI_AUTO_LENGTH, JsTrusted, NULL, &fn);
+  napi_set_named_property(env, exports, "trusted", fn);
+  napi_create_function(env, "requestScreen", NAPI_AUTO_LENGTH, JsRequestScreen, NULL, &fn);
+  napi_set_named_property(env, exports, "requestScreen", fn);
+  return exports;
+}
+
+NAPI_MODULE(NODE_GYP_MODULE_NAME, Init)
+#else
+int main(void) {
+  signal(SIGPIPE, SIG_IGN);
+  setup();
   char line[2048];
   while (fgets(line, sizeof line, stdin)) {
-    double x, y;
-    int b, c, code, down, dx, dy;
-    char hex[1100];
-    switch (line[0]) {
-      case 'm': if (sscanf(line + 1, "%lf %lf", &x, &y) == 2) mouseMove(x, y); break;
-      case 'd': if (sscanf(line + 1, "%d %lf %lf %d", &b, &x, &y, &c) == 4) mouseButton(b, x, y, c, 1); break;
-      case 'u': if (sscanf(line + 1, "%d %lf %lf %d", &b, &x, &y, &c) == 4) mouseButton(b, x, y, c, 0); break;
-      case 'w': if (sscanf(line + 1, "%d %d", &dx, &dy) == 2) scroll(dx, dy); break;
-      case 'k': if (sscanf(line + 1, "%d %d", &code, &down) == 2) key(code, down); break;
-      case 't': if (sscanf(line + 1, "%1024s", hex) == 1) injectText(hex); break;
-      case 'r': releaseAll(); break;
-      case 'a': puts(AXIsProcessTrusted() ? "trusted" : "untrusted"); fflush(stdout); break;
-      case 'p': puts("pong"); fflush(stdout); break;
-      default: break;
+    const char *answer = handle(line);
+    if (answer) {
+      puts(answer);
+      fflush(stdout);
     }
   }
   releaseAll();
   return 0;
 }
+#endif

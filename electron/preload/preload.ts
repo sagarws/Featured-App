@@ -275,6 +275,8 @@ const api = {
     diagnostics: (): Promise<Result<Record<string, unknown>>> => ipcRenderer.invoke(REMOTE_IPC.diagnostics),
     openPrivacy: (pane: 'screen' | 'accessibility' | 'firewall'): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.openPrivacy, pane),
     requestAccessibility: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.requestAccessibility),
+    setupPermissions: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.setupPermissions),
+    relaunch: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.relaunch),
     /** Windows: install / remove the lock-screen agent (administrator prompt). */
     installSecureAgent: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.installSecureAgent),
     removeSecureAgent: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.removeSecureAgent),

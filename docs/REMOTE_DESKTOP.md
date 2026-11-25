@@ -144,7 +144,7 @@ Two computers on the same LAN, both running the app:
 | | macOS | Windows 10/11 | Linux |
 |---|---|---|---|
 | Share the screen | **Screen & System Audio Recording** for the app (prompted on first share) | none | X11: none. Wayland: the desktop portal asks each time |
-| Be controlled | **Device Control and Data Access** (called **Accessibility** before macOS 27) for the app and its helper (a second "Featured App" entry with an `exec` icon: `Resources/native/remote-input`) and its helper (a second "Featured App" entry with an `exec` icon: `Resources/native/remote-input`) (Diagnostics → *Ask macOS*); restart the session after granting | none (normal windows) | X11 session + `python3` with libX11/libXtst (preinstalled on X11 desktops). Wayland: view only |
+| Be controlled | **Device Control and Data Access** (called **Accessibility** before macOS 27) for Featured App — one entry: the keyboard/mouse code runs inside the app (`remote-input.node`; the standalone `remote-input` helper is only a fallback). Remote Desktop → *Set up remote control* asks for this and Screen Recording with one button; restart the app after granting Screen Recording | none (normal windows) | X11 session + `python3` with libX11/libXtst (preinstalled on X11 desktops). Wayland: view only |
 | In development | Permissions attach to the terminal / Electron binary that launched the app | — | — |
 
 ## 4. Different networks (the built-in remote server)

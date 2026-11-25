@@ -784,6 +784,29 @@ export const requestInputPermission = (): void => {
   setTimeout(() => void refreshPermissions(), 1500)
 }
 
+/**
+ * macOS one-time setup: asks for Screen Recording and keyboard/mouse control
+ * together (both credited to "Featured App" itself), then re-checks every 2 s
+ * for 3 minutes so the setup card turns green as soon as each is switched on.
+ */
+let setupWatch: NodeJS.Timeout | null = null
+export const setupMacPermissions = (): void => {
+  if (process.platform !== 'darwin') return
+  injector.requestScreenPermission()
+  injector.requestPermission()
+  if (setupWatch) clearInterval(setupWatch)
+  const until = Date.now() + 3 * 60_000
+  setupWatch = setInterval(() => {
+    void refreshPermissions()
+    const done = permissions.input === 'granted' && permissions.screen === 'granted'
+    if ((done || Date.now() > until) && setupWatch) {
+      clearInterval(setupWatch)
+      setupWatch = null
+    }
+  }, 2000)
+  setupWatch.unref()
+}
+
 export { history as appendHistory }
 
 // ── lifecycle ───────────────────────────────────────────────────────────────

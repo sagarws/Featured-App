@@ -25,6 +25,34 @@ export const macControlPane = (darwinMajor = Number(release().split('.')[0])): s
  * host's main process has authorised for full control.
  */
 
+/** The macOS input module (native/mac/remote-input.c built as remote-input.node). */
+interface InputModule {
+  handle(line: string): string | null
+  trusted(prompt: boolean): boolean
+  /** Screen Recording prompt; true when already allowed. */
+  requestScreen(): boolean
+}
+
+/**
+ * macOS: load the input code into this process, so the app itself posts the
+ * events and macOS shows ONE permission entry ("Featured App"), not a second
+ * one for a separate helper. Null when it cannot load: the helper is used.
+ */
+const loadInputModule = (): InputModule | null => {
+  if (process.platform !== 'darwin') return null
+  const path = app.isPackaged ? join(process.resourcesPath, 'native', 'remote-input.node') : join(app.getAppPath(), 'resources', 'native', 'mac', 'remote-input.node')
+  if (!existsSync(path)) return null
+  try {
+    const holder: { exports: unknown } = { exports: {} }
+    process.dlopen(holder, path)
+    const m = holder.exports as Partial<InputModule>
+    return typeof m.handle === 'function' && typeof m.trusted === 'function' && typeof m.requestScreen === 'function' ? (m as InputModule) : null
+  } catch (error) {
+    logger.warn('[remote] input module did not load; using the helper', error)
+    return null
+  }
+}
+
 const helperCommand = (): { command: string; args: string[] } | null => {
   const packaged = app.isPackaged
   const base = (...parts: string[]): string => (packaged ? join(process.resourcesPath, 'native', parts[parts.length - 1]!) : join(app.getAppPath(), ...parts))
@@ -57,6 +85,8 @@ export class InputInjector {
   private status: PermissionStatus['input'] = 'unknown'
   private detail: string | null = null
   private readonly os = platform()
+  /** macOS: the input code in this process (one permission entry); null → the helper process. */
+  private readonly module = loadInputModule()
 
   private ensure(): ChildProcessWithoutNullStreams | null {
     if (this.child && !this.child.killed && this.child.exitCode === null) return this.child
@@ -96,11 +126,16 @@ export class InputInjector {
   }
 
   private write(line: string): void {
+    if (this.module) {
+      this.module.handle(line)
+      return
+    }
     const child = this.ensure()
     if (child?.stdin.writable) child.stdin.write(`${line}\n`)
   }
 
   private ask(command: string, timeoutMs: number): Promise<string> {
+    if (this.module) return Promise.resolve(this.module.handle(command) ?? '')
     const child = this.ensure()
     if (!child) return Promise.resolve('')
     return new Promise(resolve => {
@@ -132,7 +167,9 @@ export class InputInjector {
       this.status = 'denied'
       this.detail =
         process.platform === 'darwin'
-          ? `Allow Featured App under System Settings → Privacy & Security → ${macControlPane()} (switch on both "Featured App" entries; one is its keyboard/mouse helper), then restart the session.`
+          ? this.module
+            ? `On the Mac: Remote Desktop → Set up remote control → Allow (or System Settings → Privacy & Security → ${macControlPane()} → Featured App on), then restart the session.`
+            : `Allow Featured App under System Settings → Privacy & Security → ${macControlPane()} (switch on both "Featured App" entries; one is its keyboard/mouse helper), then restart the session.`
           : answer.slice('untrusted'.length).trim() || 'Keyboard/mouse control is not available.'
     } else if (this.status !== 'unsupported') {
       this.status = 'unknown'
@@ -147,7 +184,14 @@ export class InputInjector {
 
   /** macOS: show the Accessibility prompt for this app. */
   requestPermission(): void {
-    if (process.platform === 'darwin') systemPreferences.isTrustedAccessibilityClient(true)
+    if (process.platform !== 'darwin') return
+    if (this.module) this.module.trusted(true)
+    else systemPreferences.isTrustedAccessibilityClient(true)
+  }
+
+  /** macOS: ask for Screen Recording for this app (the system prompt shows once; later, Settings). */
+  requestScreenPermission(): void {
+    if (process.platform === 'darwin') this.module?.requestScreen()
   }
 
   inject(event: InputEvent, display: Display): void {
@@ -194,10 +238,11 @@ export class InputInjector {
 
   /** Let go of every key and button the viewer was holding (session ended, control revoked, focus lost). */
   releaseAll(): void {
-    if (this.child) this.write('r')
+    if (this.module || this.child) this.write('r')
   }
 
   stop(): void {
+    if (this.module) this.releaseAll()
     if (!this.child) return
     this.releaseAll()
     this.child.stdin.end()
