@@ -89,6 +89,17 @@ distribution decision first.
   minute globally pauses everyone for a minute. Request pop-ups are limited
   to 3/min per device. Owners can revoke one device (blocked even with the
   password), revoke all (password removed), or switch unattended off.
+- **Saved passwords (viewer side).** "Remember password" in Connect keeps
+  another computer's unattended password in `remote-secrets.json`
+  (`savedPasswords`, keyed by 8-digit device ID, at most 50, oldest dropped) —
+  only while `safeStorage` encryption is available; otherwise nothing is saved
+  and the switch is disabled. The password never leaves the main process: the
+  renderer only gets the list of IDs that have one (`RemoteStatus.savedPasswords`).
+  It is used when Connect's password field is left empty or on Reconnect
+  (`useSavedPassword`), sent only to the computer whose key matches that ID,
+  refreshed after a successful unattended connection, and deleted when the
+  other computer answers *wrong password*. Forget one (Devices, Connect,
+  Security) or all (Security); revoke-all and clearing history leave them alone.
 - **Host-side enforcement** (`hostSession.ts`): input is injected only while
   the session is active, unexpired, full-control, and the owner's *Disable
   remote control* kill switch is off — checked for every event in the main

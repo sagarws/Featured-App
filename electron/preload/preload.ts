@@ -264,6 +264,9 @@ const api = {
     refreshDiscovery: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.refreshDiscovery),
     updateDevice: (id: string, patch: { name?: string; favorite?: boolean }): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.updateDevice, id, patch),
     forgetDevice: (id: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.forgetDevice, id),
+    /** Saved passwords for other computers: the renderer only ever sees which IDs have one (RemoteStatus.savedPasswords). */
+    forgetSavedPassword: (id: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.forgetSavedPassword, id),
+    forgetAllSavedPasswords: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.forgetAllSavedPasswords),
     revokeDevice: (id: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.revokeDevice, id),
     revokeAll: (): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.revokeAll),
     unblockDevice: (id: string): Promise<Result> => ipcRenderer.invoke(REMOTE_IPC.unblockDevice, id),

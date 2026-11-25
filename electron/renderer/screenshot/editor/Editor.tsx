@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Box, Button, ButtonBase, CircularProgress, Divider, IconButton, Popover, Stack, Tooltip, Typography } from '@mui/material'
 import {
   ArrowOutward,
@@ -28,6 +28,7 @@ import {
 } from '@mui/icons-material'
 import toast from 'react-hot-toast'
 import type { CaptureInfo, ExportAction } from '@shared/types/screenshot'
+import { chooseToolbarLayout } from '@shared/utils/screenshot'
 import {
   bounds,
   COLORS,
@@ -68,6 +69,9 @@ const SIZE_LABEL = ['S', 'M', 'L', 'XL']
 const ZOOMS = [0.1, 0.25, 0.33, 0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3, 4, 6, 8]
 const TOOLBAR = 52
 const STATUS = 30
+/** Top bar side padding; on macOS the left leaves room for the traffic lights. */
+const BAR_PAD = 12
+const MAC_BAR_PAD_LEFT = 84
 
 let nextId = 0
 const newId = (): string => `s${Date.now().toString(36)}${(nextId++).toString(36)}`
@@ -132,6 +136,11 @@ const Editor = ({ id }: { id: string }) => {
   const pixels = useRef<CanvasRenderingContext2D | null>(null)
   const drag = useRef<Drag | null>(null)
   const textRef = useRef<HTMLTextAreaElement | null>(null)
+  const toolsRef = useRef<HTMLDivElement | null>(null)
+  const actionsRef = useRef<HTMLDivElement | null>(null)
+  // Natural widths of the two toolbar groups, measured from the DOM.
+  const [barNeeds, setBarNeeds] = useState({ tools: 0, actions: 0 })
+  const [windowWidth, setWindowWidth] = useState(() => document.documentElement.clientWidth)
   const mac = prefs?.platform === 'darwin'
   const density = info?.scaleFactor ?? 1
 
@@ -501,7 +510,11 @@ const Editor = ({ id }: { id: string }) => {
         const result = await api.exportImage(id, action, png)
         if (!result.ok) throw new Error(result.error)
         if (quiet) return true
-        if (action === 'copy') toast.success('Copied to clipboard')
+        if (action === 'copy') {
+          // Copied: the editor's job is done.
+          void api.closeSelf()
+          return true
+        }
         if ((action === 'save' || action === 'saveAs') && result.value.path) toast.success(`Saved ${result.value.path.split(/[\\/]/).pop()}`)
         if (action === 'upload') toast.success(result.value.link ? 'Uploaded — link copied' : 'Uploaded')
         return true
@@ -520,6 +533,29 @@ const Editor = ({ id }: { id: string }) => {
     if (prefs?.escSave) await run('save', true)
     void api.closeSelf()
   }, [prefs, run, api])
+
+  // ── toolbar layout ──
+  useEffect(() => {
+    const onResize = () => setWindowWidth(document.documentElement.clientWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const barAvailable = windowWidth - (mac ? MAC_BAR_PAD_LEFT : BAR_PAD) - BAR_PAD
+  const layout = chooseToolbarLayout(barAvailable, barNeeds.tools, barNeeds.actions)
+  const split = layout === 'split'
+
+  // Measure before paint. The tools group is only in the top bar in the row
+  // layout, so its last measured width is kept while split.
+  useLayoutEffect(() => {
+    const tools = toolsRef.current?.offsetWidth
+    const actions = actionsRef.current?.offsetWidth
+    setBarNeeds(prev => {
+      const next = { tools: tools || prev.tools, actions: actions || prev.actions }
+      return next.tools === prev.tools && next.actions === prev.actions ? prev : next
+    })
+    // Re-measured when the bar is (re)built: after loading and on each switch.
+  }, [image, split])
 
   // ── zoom ──
   const stepZoom = useCallback(
@@ -650,18 +686,97 @@ const Editor = ({ id }: { id: string }) => {
     </Tooltip>
   )
 
+  const divider = <Divider orientation={split ? 'horizontal' : 'vertical'} flexItem sx={{ ...(split ? { my: 1 } : { mx: 1 }), borderColor: 'rgba(255,255,255,0.12)' }} />
+  /** Split layout: a two-column grid in the left rail. */
+  const railGrid = { display: 'grid', gridTemplateColumns: 'repeat(2, max-content)', gap: 0.5, justifyContent: 'center' } as const
+
+  const toolButtons = TOOLS.map(t => (
+    <Tooltip key={t.id} title={`${t.label} (${t.key})`} placement={split ? 'right' : 'bottom'}>
+      <IconButton
+        size='small'
+        onClick={() => chooseTool(t.id)}
+        sx={{
+          WebkitAppRegion: 'no-drag',
+          borderRadius: 1.5,
+          color: tool === t.id ? '#fff' : 'rgba(255,255,255,0.75)',
+          bgcolor: tool === t.id ? 'primary.main' : 'transparent',
+          '&:hover': { bgcolor: tool === t.id ? 'primary.main' : 'rgba(255,255,255,0.08)' }
+        }}
+      >
+        {t.icon}
+      </IconButton>
+    </Tooltip>
+  ))
+
+  const colourButton = (
+    <Tooltip title='Colour' placement={split ? 'right' : 'bottom'}>
+      <ButtonBase
+        onClick={e => setColorAnchor(e.currentTarget)}
+        sx={{ WebkitAppRegion: 'no-drag', width: 26, height: 26, borderRadius: '50%', bgcolor: activeColor, border: '2px solid rgba(255,255,255,0.85)', flexShrink: 0, alignSelf: 'center' }}
+      />
+    </Tooltip>
+  )
+
+  const sizeButtons = SIZE_LABEL.map((label, i) => (
+    <Tooltip key={label} title={`Size ${label} (${i + 1})`} placement={split ? 'right' : 'bottom'}>
+      <ButtonBase
+        onClick={() => {
+          setSize(i as SizeLevel)
+          updateSelected({ size: i as SizeLevel })
+        }}
+        sx={{
+          WebkitAppRegion: 'no-drag',
+          width: 28,
+          height: 28,
+          borderRadius: 1.5,
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: activeSize === i ? '#fff' : 'rgba(255,255,255,0.6)',
+          bgcolor: activeSize === i ? 'rgba(255,255,255,0.14)' : 'transparent'
+        }}
+      >
+        {label}
+      </ButtonBase>
+    </Tooltip>
+  ))
+
+  const historyButtons = (
+    <>
+      <Tooltip title='Undo (⌘Z / Ctrl+Z)' placement={split ? 'right' : 'bottom'}>
+        <span>
+          <IconButton size='small' onClick={undo} disabled={!history.past} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
+            <Undo fontSize='small' />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title='Redo' placement={split ? 'right' : 'bottom'}>
+        <span>
+          <IconButton size='small' onClick={redo} disabled={!history.future} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
+            <Redo fontSize='small' />
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Tooltip title='Delete selected (⌫)' placement={split ? 'right' : 'bottom'}>
+        <span>
+          <IconButton size='small' onClick={deleteSelected} disabled={!selected} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
+            <DeleteOutline fontSize='small' />
+          </IconButton>
+        </span>
+      </Tooltip>
+    </>
+  )
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#1e1e24', color: '#eee', userSelect: 'none' }}>
-      {/* toolbar — also the window's drag handle on macOS (hidden title bar) */}
+      {/* top bar — also the window's drag handle on macOS (hidden title bar) */}
       <Stack
         direction='row'
         alignItems='center'
-        spacing={0.5}
         sx={{
           height: TOOLBAR,
           flexShrink: 0,
-          px: 1.5,
-          pl: mac ? '84px' : 1.5,
+          pl: `${mac ? MAC_BAR_PAD_LEFT : BAR_PAD}px`,
+          pr: `${BAR_PAD}px`,
           bgcolor: '#2a2a32',
           borderBottom: '1px solid rgba(255,255,255,0.08)',
           WebkitAppRegion: 'drag',
@@ -669,212 +784,181 @@ const Editor = ({ id }: { id: string }) => {
           '&::-webkit-scrollbar': { display: 'none' }
         }}
       >
-        {TOOLS.map(t => (
-          <Tooltip key={t.id} title={`${t.label} (${t.key})`}>
-            <IconButton
-              size='small'
-              onClick={() => chooseTool(t.id)}
-              sx={{
-                WebkitAppRegion: 'no-drag',
-                borderRadius: 1.5,
-                color: tool === t.id ? '#fff' : 'rgba(255,255,255,0.75)',
-                bgcolor: tool === t.id ? 'primary.main' : 'transparent',
-                '&:hover': { bgcolor: tool === t.id ? 'primary.main' : 'rgba(255,255,255,0.08)' }
-              }}
-            >
-              {t.icon}
-            </IconButton>
-          </Tooltip>
-        ))}
-        <Divider orientation='vertical' flexItem sx={{ mx: 1, borderColor: 'rgba(255,255,255,0.12)' }} />
-        <Tooltip title='Colour'>
-          <ButtonBase
-            onClick={e => setColorAnchor(e.currentTarget)}
-            sx={{ WebkitAppRegion: 'no-drag', width: 26, height: 26, borderRadius: '50%', bgcolor: activeColor, border: '2px solid rgba(255,255,255,0.85)', flexShrink: 0 }}
-          />
-        </Tooltip>
-        <Stack direction='row' sx={{ WebkitAppRegion: 'no-drag', ml: 1 }}>
-          {SIZE_LABEL.map((label, i) => (
-            <Tooltip key={label} title={`Size ${label} (${i + 1})`}>
-              <ButtonBase
-                onClick={() => {
-                  setSize(i as SizeLevel)
-                  updateSelected({ size: i as SizeLevel })
-                }}
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 1.5,
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: activeSize === i ? '#fff' : 'rgba(255,255,255,0.6)',
-                  bgcolor: activeSize === i ? 'rgba(255,255,255,0.14)' : 'transparent'
-                }}
-              >
-                {label}
-              </ButtonBase>
-            </Tooltip>
-          ))}
-        </Stack>
-        <Divider orientation='vertical' flexItem sx={{ mx: 1, borderColor: 'rgba(255,255,255,0.12)' }} />
-        <Tooltip title='Undo (⌘Z / Ctrl+Z)'>
-          <span>
-            <IconButton size='small' onClick={undo} disabled={!history.past} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
-              <Undo fontSize='small' />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title='Redo'>
-          <span>
-            <IconButton size='small' onClick={redo} disabled={!history.future} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
-              <Redo fontSize='small' />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title='Delete selected (⌫)'>
-          <span>
-            <IconButton size='small' onClick={deleteSelected} disabled={!selected} sx={{ color: '#fff', WebkitAppRegion: 'no-drag' }}>
-              <DeleteOutline fontSize='small' />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Editing tools: here when the row fits, otherwise in the left rail. */}
+        {!split && (
+          <Stack ref={toolsRef} direction='row' alignItems='center' spacing={0.5} sx={{ flexShrink: 0 }}>
+            {toolButtons}
+            {divider}
+            {colourButton}
+            <Stack direction='row' sx={{ ml: 1 }}>
+              {sizeButtons}
+            </Stack>
+            {divider}
+            {historyButtons}
+          </Stack>
+        )}
         <Box sx={{ flex: 1, minWidth: 12 }} />
-        {actionButton('pin', 'Pin above all windows', <PushPinOutlined fontSize='small' />)}
-        {actionButton('upload', prefs?.uploadReady ? 'Upload and copy link (⌘U / Ctrl+U)' : (prefs?.uploadProblem ?? 'Upload'), <CloudUploadOutlined fontSize='small' />)}
-        {actionButton('saveAs', 'Save as… (⇧⌘S / Ctrl+Shift+S)', <SaveAs fontSize='small' />)}
-        {actionButton('save', 'Save to screenshots folder (⌘S / Ctrl+S)', <SaveOutlined fontSize='small' />)}
-        <Button
-          size='small'
-          variant='contained'
-          startIcon={busy === 'copy' ? <CircularProgress size={14} color='inherit' /> : <ContentCopy sx={{ fontSize: 16 }} />}
-          onClick={() => void run('copy')}
-          disabled={!!busy}
-          sx={{ WebkitAppRegion: 'no-drag', ml: 0.5, flexShrink: 0, textTransform: 'none' }}
-        >
-          Copy
-        </Button>
+        <Stack ref={actionsRef} direction='row' alignItems='center' spacing={0.5} sx={{ flexShrink: 0 }}>
+          {actionButton('pin', 'Pin above all windows', <PushPinOutlined fontSize='small' />)}
+          {actionButton('upload', prefs?.uploadReady ? 'Upload and copy link (⌘U / Ctrl+U)' : (prefs?.uploadProblem ?? 'Upload'), <CloudUploadOutlined fontSize='small' />)}
+          {actionButton('saveAs', 'Save as… (⇧⌘S / Ctrl+Shift+S)', <SaveAs fontSize='small' />)}
+          {actionButton('save', 'Save to screenshots folder (⌘S / Ctrl+S)', <SaveOutlined fontSize='small' />)}
+          <Button
+            size='small'
+            variant='contained'
+            startIcon={busy === 'copy' ? <CircularProgress size={14} color='inherit' /> : <ContentCopy sx={{ fontSize: 16 }} />}
+            onClick={() => void run('copy')}
+            disabled={!!busy}
+            sx={{ WebkitAppRegion: 'no-drag', ml: 0.5, flexShrink: 0, textTransform: 'none' }}
+          >
+            Copy
+          </Button>
+        </Stack>
       </Stack>
 
-      {/* canvas */}
-      <Box ref={viewportRef} sx={{ flex: 1, overflow: 'auto', position: 'relative', bgcolor: '#141418' }}>
-        <Box sx={{ minWidth: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', p: 3, boxSizing: 'border-box', width: canvasW + 48, height: canvasH + 48 }}>
-          <Box
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={() => setHoverHex(null)}
-            onDoubleClick={onDoubleClick}
-            sx={{ position: 'relative', width: canvasW, height: canvasH, cursor, boxShadow: '0 8px 30px rgba(0,0,0,0.5)', touchAction: 'none' }}
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {/* left rail (narrow windows) */}
+        {split && (
+          <Stack
+            sx={{
+              flexShrink: 0,
+              p: 1,
+              bgcolor: '#2a2a32',
+              borderRight: '1px solid rgba(255,255,255,0.08)',
+              overflowY: 'auto',
+              '&::-webkit-scrollbar': { display: 'none' }
+            }}
           >
-            <canvas
-              ref={canvasRef}
-              style={{
-                width: canvasW,
-                height: canvasH,
-                display: 'block',
-                imageRendering: zoomValue >= 2 ? 'pixelated' : 'auto',
-                // Checkerboard under transparent window shadows.
-                backgroundImage: 'repeating-conic-gradient(#2c2c34 0% 25%, #24242b 0% 50%)',
-                backgroundSize: '16px 16px'
-              }}
-            />
-            {crop && (
-              <>
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    left: (crop.x - view.x) * scale,
-                    top: (crop.y - view.y) * scale,
-                    width: crop.w * scale,
-                    height: crop.h * scale,
-                    border: '1.5px solid #fff',
-                    boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
-                    pointerEvents: 'none',
-                    backgroundImage:
-                      'linear-gradient(to right, rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.3) 1px, transparent 1px)',
-                    backgroundSize: `${(crop.w * scale) / 3}px ${(crop.h * scale) / 3}px`
-                  }}
-                >
-                  {(['nw', 'ne', 'sw', 'se'] as const).map(h => (
-                    <Box
-                      key={h}
-                      sx={{
-                        position: 'absolute',
-                        width: 12,
-                        height: 12,
-                        bgcolor: '#fff',
-                        borderRadius: '3px',
-                        ...(h.includes('n') ? { top: -6 } : { bottom: -6 }),
-                        ...(h.includes('w') ? { left: -6 } : { right: -6 })
-                      }}
-                    />
-                  ))}
-                </Box>
-                <Stack
-                  direction='row'
-                  spacing={1}
-                  onPointerDown={e => e.stopPropagation()}
-                  sx={{
-                    position: 'absolute',
-                    left: Math.max(0, (crop.x - view.x) * scale),
-                    top: Math.min(canvasH - 40, (crop.y - view.y + crop.h) * scale + 8),
-                    p: 0.75,
-                    borderRadius: 2,
-                    bgcolor: 'rgba(20,20,28,0.92)',
-                    zIndex: 2
-                  }}
-                >
-                  <Typography sx={{ fontSize: 12, px: 1, alignSelf: 'center', fontVariantNumeric: 'tabular-nums' }}>
-                    {Math.round(crop.w)} × {Math.round(crop.h)}
-                  </Typography>
-                  <Button size='small' color='inherit' onClick={() => chooseTool('select')} sx={{ textTransform: 'none' }}>
-                    Cancel
-                  </Button>
-                  <Button size='small' variant='contained' onClick={applyCrop} sx={{ textTransform: 'none' }}>
-                    Crop (↩)
-                  </Button>
-                </Stack>
-              </>
-            )}
-            {textEdit && (
-              <Box
-                component='textarea'
-                ref={textRef}
-                value={textEdit.text}
-                rows={Math.max(1, textEdit.text.split('\n').length)}
-                onChange={e => setTextEdit({ ...textEdit, text: e.target.value })}
-                onPointerDown={e => e.stopPropagation()}
-                onBlur={commitText}
-                onKeyDown={e => {
-                  e.stopPropagation()
-                  if (e.key === 'Escape') setTextEdit(null)
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    commitText()
-                  }
-                }}
-                placeholder='Type…'
-                sx={{
-                  position: 'absolute',
-                  left: (textEdit.x - view.x) * scale,
-                  top: (textEdit.y - view.y) * scale,
-                  minWidth: 80,
-                  width: Math.max(80, (Math.max(4, ...textEdit.text.split('\n').map(l => l.length)) + 1) * fontSize(activeSize, density) * scale * 0.62),
-                  font: `600 ${fontSize(activeSize, density) * scale}px "Inter Variable", system-ui, sans-serif`,
-                  lineHeight: 1.25,
-                  color: textEdit.editingId ? (doc.shapes.find(s => s.id === textEdit.editingId) as TextShape | undefined)?.color : color,
-                  bgcolor: 'rgba(0,0,0,0.25)',
-                  border: '1px dashed rgba(255,255,255,0.7)',
-                  borderRadius: 1,
-                  outline: 'none',
-                  resize: 'none',
-                  overflow: 'hidden',
-                  p: 0,
-                  m: 0,
-                  whiteSpace: 'pre'
+            <Box sx={railGrid}>{toolButtons}</Box>
+            {divider}
+            {colourButton}
+            <Box sx={{ ...railGrid, mt: 1 }}>{sizeButtons}</Box>
+            {divider}
+            <Box sx={railGrid}>{historyButtons}</Box>
+          </Stack>
+        )}
+
+        {/* canvas */}
+        <Box ref={viewportRef} sx={{ flex: 1, overflow: 'auto', position: 'relative', bgcolor: '#141418' }}>
+          <Box sx={{ minWidth: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', p: 3, boxSizing: 'border-box', width: canvasW + 48, height: canvasH + 48 }}>
+            <Box
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={() => setHoverHex(null)}
+              onDoubleClick={onDoubleClick}
+              sx={{ position: 'relative', width: canvasW, height: canvasH, cursor, boxShadow: '0 8px 30px rgba(0,0,0,0.5)', touchAction: 'none' }}
+            >
+              <canvas
+                ref={canvasRef}
+                style={{
+                  width: canvasW,
+                  height: canvasH,
+                  display: 'block',
+                  imageRendering: zoomValue >= 2 ? 'pixelated' : 'auto',
+                  // Checkerboard under transparent window shadows.
+                  backgroundImage: 'repeating-conic-gradient(#2c2c34 0% 25%, #24242b 0% 50%)',
+                  backgroundSize: '16px 16px'
                 }}
               />
-            )}
+              {crop && (
+                <>
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      left: (crop.x - view.x) * scale,
+                      top: (crop.y - view.y) * scale,
+                      width: crop.w * scale,
+                      height: crop.h * scale,
+                      border: '1.5px solid #fff',
+                      boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
+                      pointerEvents: 'none',
+                      backgroundImage:
+                        'linear-gradient(to right, rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.3) 1px, transparent 1px)',
+                      backgroundSize: `${(crop.w * scale) / 3}px ${(crop.h * scale) / 3}px`
+                    }}
+                  >
+                    {(['nw', 'ne', 'sw', 'se'] as const).map(h => (
+                      <Box
+                        key={h}
+                        sx={{
+                          position: 'absolute',
+                          width: 12,
+                          height: 12,
+                          bgcolor: '#fff',
+                          borderRadius: '3px',
+                          ...(h.includes('n') ? { top: -6 } : { bottom: -6 }),
+                          ...(h.includes('w') ? { left: -6 } : { right: -6 })
+                        }}
+                      />
+                    ))}
+                  </Box>
+                  <Stack
+                    direction='row'
+                    spacing={1}
+                    onPointerDown={e => e.stopPropagation()}
+                    sx={{
+                      position: 'absolute',
+                      left: Math.max(0, (crop.x - view.x) * scale),
+                      top: Math.min(canvasH - 40, (crop.y - view.y + crop.h) * scale + 8),
+                      p: 0.75,
+                      borderRadius: 2,
+                      bgcolor: 'rgba(20,20,28,0.92)',
+                      zIndex: 2
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 12, px: 1, alignSelf: 'center', fontVariantNumeric: 'tabular-nums' }}>
+                      {Math.round(crop.w)} × {Math.round(crop.h)}
+                    </Typography>
+                    <Button size='small' color='inherit' onClick={() => chooseTool('select')} sx={{ textTransform: 'none' }}>
+                      Cancel
+                    </Button>
+                    <Button size='small' variant='contained' onClick={applyCrop} sx={{ textTransform: 'none' }}>
+                      Crop (↩)
+                    </Button>
+                  </Stack>
+                </>
+              )}
+              {textEdit && (
+                <Box
+                  component='textarea'
+                  ref={textRef}
+                  value={textEdit.text}
+                  rows={Math.max(1, textEdit.text.split('\n').length)}
+                  onChange={e => setTextEdit({ ...textEdit, text: e.target.value })}
+                  onPointerDown={e => e.stopPropagation()}
+                  onBlur={commitText}
+                  onKeyDown={e => {
+                    e.stopPropagation()
+                    if (e.key === 'Escape') setTextEdit(null)
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      commitText()
+                    }
+                  }}
+                  placeholder='Type…'
+                  sx={{
+                    position: 'absolute',
+                    left: (textEdit.x - view.x) * scale,
+                    top: (textEdit.y - view.y) * scale,
+                    minWidth: 80,
+                    width: Math.max(80, (Math.max(4, ...textEdit.text.split('\n').map(l => l.length)) + 1) * fontSize(activeSize, density) * scale * 0.62),
+                    font: `600 ${fontSize(activeSize, density) * scale}px "Inter Variable", system-ui, sans-serif`,
+                    lineHeight: 1.25,
+                    color: textEdit.editingId ? (doc.shapes.find(s => s.id === textEdit.editingId) as TextShape | undefined)?.color : color,
+                    bgcolor: 'rgba(0,0,0,0.25)',
+                    border: '1px dashed rgba(255,255,255,0.7)',
+                    borderRadius: 1,
+                    outline: 'none',
+                    resize: 'none',
+                    overflow: 'hidden',
+                    p: 0,
+                    m: 0,
+                    whiteSpace: 'pre'
+                  }}
+                />
+              )}
+            </Box>
           </Box>
         </Box>
       </Box>
@@ -914,7 +998,7 @@ const Editor = ({ id }: { id: string }) => {
         open={!!colorAnchor}
         anchorEl={colorAnchor}
         onClose={() => setColorAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        anchorOrigin={split ? { vertical: 'top', horizontal: 'right' } : { vertical: 'bottom', horizontal: 'left' }}
         slotProps={{ paper: { sx: { p: 1.5, bgcolor: '#2a2a32' } } }}
       >
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 28px)', gap: 1 }}>

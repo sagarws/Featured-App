@@ -17,6 +17,8 @@ const RemoteDesktopPage = () => {
   const status = useRemoteStatus()
   const [tab, setTab] = useState<TabId>('connect')
   const [target, setTarget] = useState('')
+  /** Reconnect (Devices / History): ConnectCard dials this ID once per nonce. */
+  const [reconnect, setReconnect] = useState<{ id: string; nonce: number } | null>(null)
 
   if (!status) {
     return (
@@ -24,6 +26,12 @@ const RemoteDesktopPage = () => {
         <CircularProgress size={28} />
       </Stack>
     )
+  }
+
+  const startReconnect = (id: string) => {
+    setTarget(id)
+    setTab('connect')
+    setReconnect({ id, nonce: Date.now() })
   }
 
   const live = status.sessions.filter(s => s.state !== 'ended')
@@ -79,15 +87,15 @@ const RemoteDesktopPage = () => {
         <Stack spacing={3}>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
             <ThisDeviceCard status={status} />
-            <ConnectCard status={status} target={target} onTarget={setTarget} />
+            <ConnectCard status={status} target={target} onTarget={setTarget} reconnect={reconnect} onReconnectStarted={() => setReconnect(null)} />
           </Box>
-          <DevicesCard status={status} onPick={setTarget} />
+          <DevicesCard status={status} onPick={setTarget} onReconnect={startReconnect} />
         </Stack>
       )}
       {tab === 'sessions' && <SessionsTab status={status} />}
       {tab === 'settings' && <SettingsTab status={status} />}
       {tab === 'security' && <SecurityTab status={status} />}
-      {tab === 'history' && <HistoryTab />}
+      {tab === 'history' && <HistoryTab status={status} onReconnect={startReconnect} />}
       {tab === 'diagnostics' && <DiagnosticsTab status={status} />}
     </Stack>
   )

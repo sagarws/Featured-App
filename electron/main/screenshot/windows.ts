@@ -73,6 +73,13 @@ export const createAreaWindow = (display: Display): BrowserWindow => {
 
 const TOOLBAR_HEIGHT = 52
 const STATUS_HEIGHT = 30
+/*
+ * Smallest editor. A narrow window moves the editing tools to a rail left of
+ * the picture (two columns, ~440 px tall) and keeps only the actions and Copy
+ * in the top bar, so this is what that compact layout needs to fit unclipped.
+ */
+const EDITOR_MIN_WIDTH = 640
+const EDITOR_MIN_HEIGHT = 560
 
 export const createEditorWindow = (info: CaptureInfo, options: { alwaysOnTop: boolean }): BrowserWindow => {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
@@ -81,14 +88,14 @@ export const createEditorWindow = (info: CaptureInfo, options: { alwaysOnTop: bo
   const wantW = Math.round(info.width / info.scaleFactor) + 48
   const wantH = Math.round(info.height / info.scaleFactor) + TOOLBAR_HEIGHT + STATUS_HEIGHT + 48
   const width = Math.max(760, Math.min(Math.round(area.width * 0.9), wantW))
-  const height = Math.max(480, Math.min(Math.round(area.height * 0.9), wantH))
+  const height = Math.max(EDITOR_MIN_HEIGHT, Math.min(Math.round(area.height * 0.9), wantH))
   const win = new BrowserWindow({
     x: Math.round(area.x + (area.width - width) / 2),
     y: Math.round(area.y + (area.height - height) / 2),
     width,
     height,
-    minWidth: 640,
-    minHeight: 400,
+    minWidth: EDITOR_MIN_WIDTH,
+    minHeight: EDITOR_MIN_HEIGHT,
     title: `Screenshot — ${info.width}×${info.height}`,
     backgroundColor: '#1e1e24',
     show: false,

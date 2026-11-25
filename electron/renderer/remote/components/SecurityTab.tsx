@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Alert, Box, Button, Stack, Switch, Typography } from '@mui/material'
-import { GppMaybeOutlined, KeyOutlined } from '@mui/icons-material'
+import { GppMaybeOutlined, KeyOffOutlined, KeyOutlined } from '@mui/icons-material'
 import toast from 'react-hot-toast'
 import type { RemotePermission, RemoteSettings, RemoteStatus } from '@shared/types/remote'
+import ConfirmDialog from '../../recorder/components/ConfirmDialog'
 import { Choice, Row, Section } from '../../screenshot/components/ui'
 import { timeAgo } from '../hooks'
 import PasswordDialog from './PasswordDialog'
@@ -13,6 +14,7 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
   const s = status.settings
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [agentBusy, setAgentBusy] = useState(false)
+  const [confirmForgetAll, setConfirmForgetAll] = useState(false)
 
   const agent = async (install: boolean) => {
     setAgentBusy(true)
@@ -134,6 +136,45 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
         ))}
       </Section>
 
+      <Section
+        title='Saved passwords for other computers'
+        subtitle='“Remember password” in Connect keeps another computer’s unattended password, encrypted by the system keychain, so Reconnect does not ask for it. Separate from the access to this computer above.'
+        action={
+          status.savedPasswords.length ? (
+            <Button color='error' startIcon={<KeyOffOutlined />} onClick={() => setConfirmForgetAll(true)}>
+              Forget all
+            </Button>
+          ) : undefined
+        }
+      >
+        {!status.encryption ? (
+          <Typography variant='body2' color='text.secondary' sx={{ py: 2 }}>
+            Not available: this system has no keychain/credential store to encrypt them, so passwords are never saved.
+          </Typography>
+        ) : (
+          <>
+            <Row title='Remember passwords' hint='Default for the “Remember password” switch in Connect.'>
+              <Switch checked={s.rememberPasswords} onChange={e => void update({ rememberPasswords: e.target.checked })} />
+            </Row>
+            {!status.savedPasswords.length && (
+              <Typography variant='body2' color='text.secondary' sx={{ py: 2 }}>
+                None saved.
+              </Typography>
+            )}
+            {status.savedPasswords.map(id => {
+              const device = status.saved.find(d => d.id === id)
+              return (
+                <Row key={id} title={device && device.name !== id ? `${device.name} · ${id}` : id} hint={device?.lastConnectedAt ? `Last connected ${timeAgo(device.lastConnectedAt)}` : undefined}>
+                  <Button size='small' onClick={() => void act(api.forgetSavedPassword(id), 'Saved password forgotten')}>
+                    Forget
+                  </Button>
+                </Row>
+              )
+            })}
+          </>
+        )}
+      </Section>
+
       <Section title='Blocked devices' subtitle='These cannot connect or send requests.'>
         {!status.blocked.length && (
           <Typography variant='body2' color='text.secondary' sx={{ py: 2 }}>
@@ -153,11 +194,25 @@ const SecurityTab = ({ status }: { status: RemoteStatus }) => {
         <Box component='ul' sx={{ m: 0, pl: 2.5, '& li': { fontSize: 13, color: 'text.secondary', mb: 0.5 } }}>
           <li>Every computer has its own Ed25519 key; the device ID is derived from it, and the key is pinned on the first connection.</li>
           <li>Each connection uses a fresh X25519 key exchange and AES-256-GCM with replay protection; video and input use WebRTC (DTLS-SRTP) negotiated over that channel.</li>
-          <li>Passwords are never sent or stored: the host keeps an Argon2id hash; the client proves it knows the password for that one connection.</li>
+          <li>
+            Passwords are never sent: the host keeps an Argon2id hash; the client proves it knows the password for that one connection. A remembered password for another computer stays
+            in this app’s main process, encrypted by the system keychain.
+          </li>
           <li>Permission, time limits and revocation are enforced on this computer, not by the viewer. A bar at the top of the screen shows whenever this computer is shared.</li>
         </Box>
       </Section>
 
+      <ConfirmDialog
+        open={confirmForgetAll}
+        title='Forget all saved passwords?'
+        message={`The saved passwords for ${status.savedPasswords.length} computer(s) are deleted from this computer. Connecting to them again asks for the password (or the person there to accept).`}
+        confirmLabel='Forget all'
+        onCancel={() => setConfirmForgetAll(false)}
+        onConfirm={() => {
+          setConfirmForgetAll(false)
+          void act(api.forgetAllSavedPasswords(), 'Saved passwords forgotten')
+        }}
+      />
       <PasswordDialog open={passwordOpen} hasPassword={status.unattendedPasswordSet} onClose={() => setPasswordOpen(false)} />
     </Stack>
   )

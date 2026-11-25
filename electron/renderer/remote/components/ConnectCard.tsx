@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material'
-import { LinkOutlined } from '@mui/icons-material'
+import { Alert, Box, Button, CircularProgress, FormControlLabel, Link, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { KeyOutlined, LinkOutlined } from '@mui/icons-material'
+import toast from 'react-hot-toast'
 import type { RemoteStatus } from '@shared/types/remote'
 import { parseDeviceId } from '@shared/utils/remote'
 import IconTile from '../../components/IconTile'
@@ -13,10 +14,28 @@ interface Progress {
   verificationCode?: string
 }
 
-/** Right column: dial a device by ID (or IP), with or without its unattended password. */
-const ConnectCard = ({ status, target, onTarget }: { status: RemoteStatus; target: string; onTarget: (value: string) => void }) => {
+/**
+ * Right column: dial a device by ID (or IP), with or without its unattended
+ * password. "Remember password" keeps the password (OS-encrypted, in the main
+ * process) so the next connection — or Reconnect — does not ask for it.
+ */
+const ConnectCard = ({
+  status,
+  target,
+  onTarget,
+  reconnect,
+  onReconnectStarted
+}: {
+  status: RemoteStatus
+  target: string
+  onTarget: (value: string) => void
+  /** Set by Reconnect (Devices / History): dial this ID now, with its saved password when there is one. */
+  reconnect: { id: string; nonce: number } | null
+  onReconnectStarted: () => void
+}) => {
   const api = window.printAgent.remote
   const [password, setPassword] = useState('')
+  const passwordRef = useRef<HTMLInputElement>(null)
   const [attempt, setAttempt] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,19 +49,54 @@ const ConnectCard = ({ status, target, onTarget }: { status: RemoteStatus; targe
     [api]
   )
 
-  const connect = async () => {
+  const canRemember = status.encryption
+  const remember = canRemember && status.settings.rememberPasswords
+  const typedId = parseDeviceId(target)
+  const hasSaved = !!typedId && status.savedPasswords.includes(typedId)
+
+  const connect = async (to = target.trim(), typed = password) => {
     const id = newAttemptId()
     attemptRef.current = id
     setAttempt(id)
     setError(null)
     setProgress({ stage: 'connecting', message: 'Looking for the computer…' })
-    const r = await api.connect({ target: target.trim(), ...(password ? { password } : {}) }, id)
+    const r = await api.connect(
+      {
+        target: to,
+        ...(typed ? { password: typed } : { useSavedPassword: true }),
+        ...(canRemember ? { remember } : {})
+      },
+      id
+    )
     if (attemptRef.current !== id) return
     attemptRef.current = null
     setAttempt(null)
     setProgress(null)
     if (r.ok) setPassword('')
     else if (r.error !== 'Cancelled.') setError(r.error)
+  }
+
+  // Reconnect from another card: dial once per request (the main process falls back to an attended request without a saved password).
+  const connectRef = useRef(connect)
+  useEffect(() => {
+    connectRef.current = connect
+  })
+  useEffect(() => {
+    if (!reconnect) return
+    onReconnectStarted()
+    if (attemptRef.current) return
+    setPassword('')
+    void connectRef.current(reconnect.id, '')
+  }, [reconnect, onReconnectStarted])
+
+  const forgetSaved = async () => {
+    if (!typedId) return
+    const r = await api.forgetSavedPassword(typedId)
+    if (!r.ok) toast.error(r.error)
+    else {
+      toast.success('Saved password forgotten')
+      passwordRef.current?.focus()
+    }
   }
 
   const cancel = () => {
@@ -88,12 +142,41 @@ const ConnectCard = ({ status, target, onTarget }: { status: RemoteStatus; targe
           label='Password (unattended access)'
           type='password'
           autoComplete='off'
+          inputRef={passwordRef}
           value={password}
           disabled={!!attempt}
+          placeholder={hasSaved ? 'Saved password will be used' : undefined}
+          InputLabelProps={hasSaved ? { shrink: true } : undefined}
           onChange={e => setPassword(e.target.value)}
-          helperText='Optional. Without it, the other computer shows a request to Allow or Reject.'
+          helperText={
+            hasSaved && !password ? (
+              <Stack component='span' direction='row' spacing={0.75} alignItems='center'>
+                <KeyOutlined sx={{ fontSize: 14 }} />
+                <span>Saved password will be used.</span>
+                <Link component='button' type='button' variant='caption' onClick={() => void forgetSaved()} disabled={!!attempt}>
+                  Forget
+                </Link>
+              </Stack>
+            ) : hasSaved ? (
+              'This password replaces the saved one if it works.'
+            ) : (
+              'Optional. Without it, the other computer shows a request to Allow or Reject.'
+            )
+          }
           onKeyDown={e => e.key === 'Enter' && target.trim() && !attempt && void connect()}
         />
+        <Box sx={{ mt: '-4px !important' }}>
+          <FormControlLabel
+            disabled={!canRemember || !!attempt}
+            control={<Switch size='small' checked={remember} onChange={e => void api.updateSettings({ rememberPasswords: e.target.checked })} />}
+            label={<Typography variant='body2'>Remember password</Typography>}
+          />
+          <Typography variant='caption' color='text.secondary' component='div'>
+            {canRemember
+              ? 'Kept encrypted on this computer after a successful unattended connection. Manage in Security.'
+              : 'Unavailable: this system has no keychain/credential store to encrypt saved passwords.'}
+          </Typography>
+        </Box>
 
         {progress && (
           <Alert severity='info' icon={<CircularProgress size={18} />} action={<Button color='inherit' size='small' onClick={cancel}>Cancel</Button>}>

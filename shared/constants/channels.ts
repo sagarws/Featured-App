@@ -157,6 +157,8 @@ export const REMOTE_IPC = {
   refreshDiscovery: 'remote:refresh-discovery',
   updateDevice: 'remote:update-device',
   forgetDevice: 'remote:forget-device',
+  forgetSavedPassword: 'remote:forget-saved-password',
+  forgetAllSavedPasswords: 'remote:forget-all-saved-passwords',
   revokeDevice: 'remote:revoke-device',
   revokeAll: 'remote:revoke-all',
   unblockDevice: 'remote:unblock-device',

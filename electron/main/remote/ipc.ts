@@ -111,7 +111,18 @@ export const registerRemoteIpc = (): void => {
     const r = request as Partial<ConnectRequest> | null
     if (!r || typeof r.target !== 'string' || r.target.length > 300) throw new Error('Enter a device ID.')
     if (r.password !== undefined && (typeof r.password !== 'string' || r.password.length > 256)) throw new Error('Bad password.')
-    return service.connect({ target: r.target, ...(r.password ? { password: r.password } : {}) }, event.sender, shortId(attemptId))
+    if (r.useSavedPassword !== undefined && typeof r.useSavedPassword !== 'boolean') throw new Error('Bad request.')
+    if (r.remember !== undefined && typeof r.remember !== 'boolean') throw new Error('Bad request.')
+    return service.connect(
+      {
+        target: r.target,
+        ...(r.password ? { password: r.password } : {}),
+        ...(r.useSavedPassword ? { useSavedPassword: true } : {}),
+        ...(r.remember !== undefined ? { remember: r.remember } : {})
+      },
+      event.sender,
+      shortId(attemptId)
+    )
   })
   handle(REMOTE_IPC.cancelConnect, ['main'], (_e, attemptId) => service.cancelConnect(shortId(attemptId)))
   handle(REMOTE_IPC.disconnect, ['main'], (_e, id) => service.disconnectOutgoing(sessionId(id)))
@@ -126,7 +137,17 @@ export const registerRemoteIpc = (): void => {
     service.notify()
   })
   handle(REMOTE_IPC.forgetDevice, ['main'], (_e, id) => {
-    store.forgetDevice(deviceId(id))
+    const device = deviceId(id)
+    store.forgetDevice(device)
+    store.forgetSavedPassword(device)
+    service.notify()
+  })
+  handle(REMOTE_IPC.forgetSavedPassword, ['main'], (_e, id) => {
+    store.forgetSavedPassword(deviceId(id))
+    service.notify()
+  })
+  handle(REMOTE_IPC.forgetAllSavedPasswords, ['main'], () => {
+    store.forgetAllSavedPasswords()
     service.notify()
   })
   handle(REMOTE_IPC.revokeDevice, ['main'], (_e, id) => service.revokeDevice(deviceId(id)))

@@ -58,6 +58,8 @@ export interface RemoteSettings {
   mapModifiers: boolean
   /** Send shortcuts such as ⌘W, ⌘Q, Ctrl+W to the remote computer instead of this app. */
   sendShortcuts: boolean
+  /** "Remember password" in Connect: keep other computers' unattended passwords (OS-encrypted) after a successful connection. */
+  rememberPasswords: boolean
 
   // ── outside the office network (optional, self-hosted) ──
   /** host:port of a self-hosted relay (tools/remote-relay), '' = LAN only. */
@@ -242,6 +244,12 @@ export interface RemoteStatus {
   transfers: FileTransferInfo[]
   permissions: PermissionStatus
   encryption: boolean
+  /**
+   * Device IDs (8 digits) this computer has a saved unattended password for.
+   * The passwords themselves never leave the main process. Empty when the OS
+   * has no encryption available (nothing is saved then).
+   */
+  savedPasswords: string[]
   /** Windows lock-screen agent on THIS computer (see native/win/RemoteSecureAgent.cs). */
   secureAgent: 'unsupported' | 'not-installed' | 'running'
 }
@@ -251,6 +259,10 @@ export interface ConnectRequest {
   target: string
   /** Unattended password; omit to ask the person at the other computer. */
   password?: string
+  /** No password typed: use the one saved for this device ID, if there is one (else the request is attended). */
+  useSavedPassword?: boolean
+  /** Save (or refresh) the password for this device after it is accepted. false with a typed password forgets an old one. */
+  remember?: boolean
 }
 
 /** Handed to the viewer window once a session is granted. */

@@ -34,6 +34,7 @@ export const defaultRemoteSettings = (): RemoteSettings => ({
   keyboardMode: 'positional',
   mapModifiers: true,
   sendShortcuts: true,
+  rememberPasswords: true,
   relay: '',
   turnUrl: '',
   turnUsername: ''
@@ -115,6 +116,7 @@ export const sanitiseRemoteSettings = (raw: unknown): RemoteSettings => {
     keyboardMode: pick(v.keyboardMode, KEYBOARD_MODES, base.keyboardMode),
     mapModifiers: bool(v.mapModifiers, base.mapModifiers),
     sendShortcuts: bool(v.sendShortcuts, base.sendShortcuts),
+    rememberPasswords: bool(v.rememberPasswords, base.rememberPasswords),
     relay: normaliseRelay(v.relay),
     turnUrl: normaliseIceUrl(v.turnUrl),
     turnUsername: text(v.turnUsername, 255)

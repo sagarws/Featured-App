@@ -168,6 +168,7 @@ export const status = (): RemoteStatus => {
     transfers: transfers.list(),
     permissions,
     encryption: store.encryptionAvailable(),
+    savedPasswords: store.savedPasswordIds(),
     secureAgent: secure.agentState()
   }
 }
@@ -435,6 +436,9 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
   const abort = new AbortController()
   attempts.set(attemptId, abort)
   const expectedId = target.kind === 'id' ? target.id : undefined
+  // "Remember password": the typed one, else the saved one for this ID when asked for (Connect with an empty field, Reconnect).
+  const savedPassword = !request.password && request.useSavedPassword && expectedId ? store.getSavedPassword(expectedId) : null
+  const password = request.password || savedPassword || undefined
   let lastError: Error | null = null
   try {
     for (const route of routes) {
@@ -449,21 +453,21 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
         continue
       }
       const pinned = expectedId ? store.savedDevice(expectedId)?.fingerprint : undefined
-      progress(sender, attemptId, 'authenticating', request.password ? 'Checking the password…' : 'Securing the connection…')
+      progress(sender, attemptId, 'authenticating', savedPassword ? 'Checking the saved password…' : password ? 'Checking the password…' : 'Securing the connection…')
       try {
         const result = await runClientHandshake(socket, route.kind === 'direct' ? route.host : `relay:${route.relay}`, {
           identity: store.localIdentity(),
           purpose: 'connect',
           ...(expectedId ? { expectedId } : {}),
           ...(pinned ? { pinnedFingerprint: pinned } : {}),
-          ...(request.password ? { password: request.password } : {}),
+          ...(password ? { password } : {}),
           signal: abort.signal,
           onHost: (host: HostInfo) => {
             const saved = store.savedDevice(host.id)
             if (saved && saved.fingerprint !== host.fingerprint) {
               throw new RemoteError('identity', 'This computer’s security key changed since your last connection. Remove it from Saved devices if it was reinstalled.')
             }
-            if (!request.password && !host.attended) throw new RemoteError('not-accepting', `${host.name} only accepts connections with its unattended password.`)
+            if (!password && !host.attended) throw new RemoteError('not-accepting', `${host.name} only accepts connections with its unattended password.`)
           },
           onPending: info =>
             progress(sender, attemptId, 'waiting', 'Waiting for the person at the other computer to accept…', {
@@ -482,6 +486,7 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
           fingerprint: result.host.fingerprint,
           lastConnectedAt: Date.now()
         })
+        if (granted.method === 'password' && password) rememberPassword(result.host.id, password, !!savedPassword, request.remember)
         const session = new ViewerSession(ctx, result.host, granted, result.channel, route)
         viewerSessions.set(session.id, session)
         session.start()
@@ -498,6 +503,13 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
       } catch (error) {
         if (error instanceof RemoteError && error.code !== 'network') {
           history({ direction: 'outgoing', event: error.code === 'rejected' ? 'rejected' : 'failed', peerId: expectedId ?? '', peerName: '', address: routeLabel(route), detail: error.message })
+          if (error.code === 'wrong-password' && savedPassword && expectedId) {
+            // The other computer's password changed: the saved one is useless now.
+            store.forgetSavedPassword(expectedId)
+            logger.info('[remote] saved password rejected; forgotten', { id: expectedId })
+            notify()
+            throw new RemoteError('wrong-password', `${error.message} The saved password was removed; enter the new one.`, error.retryAfterMs)
+          }
           throw error
         }
         lastError = error instanceof Error ? error : new Error(String(error))
@@ -508,6 +520,18 @@ export const connect = async (request: ConnectRequest, sender: WebContents, atte
   } finally {
     attempts.delete(attemptId)
   }
+}
+
+/**
+ * After an unattended (password) connection: save or refresh the password when
+ * "Remember password" was on or the saved one was used; forget an old one when
+ * a password was typed with "Remember password" off. The password is not logged.
+ */
+const rememberPassword = (id: string, password: string, usedSaved: boolean, remember: boolean | undefined): void => {
+  if (usedSaved || remember === true) {
+    if (store.savePassword(id, password)) logger.info('[remote] password saved for a device', { id })
+  } else if (remember === false && store.forgetSavedPassword(id)) logger.info('[remote] saved password forgotten (remember off)', { id })
+  notify()
 }
 
 const subnetOf = (address: string): string | null => /^(\d+\.\d+\.\d+)\.\d+$/.exec(address)?.[1] ?? null

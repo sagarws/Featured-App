@@ -361,3 +361,26 @@ export const uploadProblem = (upload: UploadSettings): string | null => {
       return null
   }
 }
+
+/*
+ * Editor toolbar layout. A wide window keeps one top toolbar (editing tools on
+ * the left, actions with Copy on the right). When the window is narrower than
+ * that row needs, the editing tools move to a rail on the left of the picture
+ * and only the actions stay on top, so Copy is never clipped.
+ */
+
+export type ToolbarLayout = 'row' | 'split'
+
+/** Least room kept between the tools and the actions in the single row. */
+export const EDITOR_TOOLBAR_GAP = 12
+
+/**
+ * @param available    width the top bar has for its content (window width less its padding)
+ * @param toolsWidth   measured width of the editing tools laid out in a row
+ * @param actionsWidth measured width of the actions group (pin … Copy)
+ */
+export const chooseToolbarLayout = (available: number, toolsWidth: number, actionsWidth: number): ToolbarLayout => {
+  // Not measured yet: render the row first so it can be measured.
+  if (toolsWidth <= 0 || actionsWidth <= 0) return 'row'
+  return available >= toolsWidth + actionsWidth + EDITOR_TOOLBAR_GAP ? 'row' : 'split'
+}

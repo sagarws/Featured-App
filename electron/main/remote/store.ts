@@ -3,7 +3,7 @@ import { hostname, networkInterfaces, release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { app, safeStorage } from 'electron'
 import type { AuthorizedDevice, DeviceIdentityInfo, HistoryEntry, RemotePlatform, RemoteSettings, SavedDevice } from '@shared/types/remote'
-import { parseDeviceId, sanitiseRemoteSettings } from '@shared/utils/remote'
+import { isDeviceId, parseDeviceId, sanitiseRemoteSettings } from '@shared/utils/remote'
 import { readDurableJson, writeDurableJson } from '../durableJson'
 import { logger } from '../logger'
 import { getSettings, updateSettings } from '../settings'
@@ -14,13 +14,17 @@ import { deviceIdFromPublicKey, fingerprintOf, generateIdentityKeys, privateKeyF
  *
  *   settings.json          remoteDesktop: the plain settings
  *   remote-secrets.json    identity private key, unattended-password verifier,
- *                          TURN credential — encrypted with the OS keychain /
- *                          DPAPI / libsecret through safeStorage
+ *                          TURN credential, other computers' saved passwords —
+ *                          encrypted with the OS keychain / DPAPI / libsecret
+ *                          through safeStorage
  *   remote-devices.json    saved devices (with pinned key fingerprints),
  *                          devices authorised for unattended access, blocked devices
  *   remote-history.log     the connection audit log, one JSON line per event
  *
- * No password is ever stored: only Argon2id(password, salt).
+ * This computer's own unattended password is never stored: only
+ * Argon2id(password, salt). Passwords for *other* computers ("Remember
+ * password" in Connect) are kept only while safeStorage encryption is
+ * available, and never leave the main process.
  */
 
 export const platform = (): RemotePlatform => (process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux')
@@ -41,11 +45,22 @@ export interface UnattendedRecord {
   setAt: number
 }
 
+/** Another computer's unattended password, saved by "Remember password". */
+export interface SavedPassword {
+  password: string
+  savedAt: number
+}
+
+/** At most this many saved passwords; the oldest go first. */
+export const MAX_SAVED_PASSWORDS = 50
+
 interface Secrets {
   identityPublic: string
   identityPrivate: string
   unattended: UnattendedRecord | null
   turnCredential: string
+  /** Device ID (8 digits) → its password. Only ever written to an encrypted file. */
+  savedPasswords: Record<string, SavedPassword>
 }
 
 interface SecretsFile {
@@ -65,8 +80,9 @@ export const encryptionAvailable = (): boolean => {
 }
 
 const writeSecrets = (next: Secrets): void => {
-  const json = JSON.stringify(next)
   const encrypted = encryptionAvailable()
+  // Saved passwords are never written in the clear.
+  const json = JSON.stringify(encrypted ? next : { ...next, savedPasswords: {} })
   if (!encrypted) logger.warn('[remote] OS encryption unavailable: secrets stored unencrypted (file permissions only)')
   const file: SecretsFile = encrypted ? { encrypted, data: safeStorage.encryptString(json).toString('base64') } : { encrypted, data: json }
   const path = secretsPath()
@@ -85,7 +101,8 @@ const readSecrets = (): Secrets => {
       identityPublic: raw.identityPublic,
       identityPrivate: raw.identityPrivate,
       unattended: raw.unattended && typeof raw.unattended.verifier === 'string' ? raw.unattended : null,
-      turnCredential: typeof raw.turnCredential === 'string' ? raw.turnCredential : ''
+      turnCredential: typeof raw.turnCredential === 'string' ? raw.turnCredential : '',
+      savedPasswords: file.encrypted ? cleanSavedPasswords(raw.savedPasswords) : {}
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -98,7 +115,7 @@ const readSecrets = (): Secrets => {
       logger.error('[remote] remote-secrets.json unreadable; a new device identity is created', error)
     }
     const keys = generateIdentityKeys()
-    writeSecrets({ identityPublic: keys.publicKey.toString('base64'), identityPrivate: keys.privateKey.toString('base64'), unattended: null, turnCredential: '' })
+    writeSecrets({ identityPublic: keys.publicKey.toString('base64'), identityPrivate: keys.privateKey.toString('base64'), unattended: null, turnCredential: '', savedPasswords: {} })
     logger.info('[remote] new device identity', { id: deviceIdFromPublicKey(keys.publicKey) })
   }
   return secrets!
@@ -113,6 +130,63 @@ export const getTurnCredential = (): string => readSecrets().turnCredential
 export const setTurnCredential = (value: string): void => writeSecrets({ ...readSecrets(), turnCredential: value.slice(0, 512) })
 
 export const newSalt = (): Buffer => randomToken(16)
+
+// ── saved passwords (for connecting to other computers) ────────────────────
+
+/** Only well-formed entries, keyed by 8-digit IDs, newest MAX_SAVED_PASSWORDS. */
+export const cleanSavedPasswords = (raw: unknown): Record<string, SavedPassword> => {
+  if (!raw || typeof raw !== 'object') return {}
+  const entries = Object.entries(raw as Record<string, unknown>).filter(
+    (e): e is [string, SavedPassword] =>
+      isDeviceId(e[0]) &&
+      typeof (e[1] as SavedPassword | null)?.password === 'string' &&
+      (e[1] as SavedPassword).password.length > 0 &&
+      (e[1] as SavedPassword).password.length <= 256 &&
+      typeof (e[1] as SavedPassword).savedAt === 'number'
+  )
+  return Object.fromEntries(
+    entries
+      .sort((a, b) => b[1].savedAt - a[1].savedAt)
+      .slice(0, MAX_SAVED_PASSWORDS)
+      .map(([id, v]) => [id, { password: v.password, savedAt: v.savedAt }])
+  )
+}
+
+/** `saved` with `id` set to `password` (newest), capped to MAX_SAVED_PASSWORDS by dropping the oldest. */
+export const withSavedPassword = (saved: Record<string, SavedPassword>, id: string, password: string, now: number): Record<string, SavedPassword> => {
+  const rest = Object.entries(saved)
+    .filter(([key]) => key !== id)
+    .sort((a, b) => b[1].savedAt - a[1].savedAt)
+    .slice(0, MAX_SAVED_PASSWORDS - 1)
+  return Object.fromEntries([[id, { password, savedAt: now }], ...rest])
+}
+
+/** IDs with a saved password; none when the OS cannot encrypt them. */
+export const savedPasswordIds = (): string[] => (encryptionAvailable() ? Object.keys(readSecrets().savedPasswords) : [])
+
+/** The saved password for a device, or null. Main process only: never send it to a window. */
+export const getSavedPassword = (id: string): string | null => (encryptionAvailable() && Object.hasOwn(readSecrets().savedPasswords, id) ? readSecrets().savedPasswords[id]!.password : null)
+
+/** Saves (or refreshes) a device's password. false = not saved (no OS encryption, or not a device ID / usable password). */
+export const savePassword = (id: string, password: string): boolean => {
+  if (!encryptionAvailable() || !isDeviceId(id) || !password || password.length > 256) return false
+  const current = readSecrets()
+  writeSecrets({ ...current, savedPasswords: withSavedPassword(current.savedPasswords, id, password, Date.now()) })
+  return true
+}
+
+/** true when there was one to forget. */
+export const forgetSavedPassword = (id: string): boolean => {
+  const current = readSecrets()
+  if (!Object.hasOwn(current.savedPasswords, id)) return false
+  writeSecrets({ ...current, savedPasswords: Object.fromEntries(Object.entries(current.savedPasswords).filter(([key]) => key !== id)) })
+  return true
+}
+
+export const forgetAllSavedPasswords = (): void => {
+  const current = readSecrets()
+  if (Object.keys(current.savedPasswords).length) writeSecrets({ ...current, savedPasswords: {} })
+}
 
 // ── identity ────────────────────────────────────────────────────────────────
 

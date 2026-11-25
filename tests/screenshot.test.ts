@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   acceleratorFromKeys,
   chooseFormat,
+  chooseToolbarLayout,
   DEFAULT_HOTKEYS,
   encodeKey,
   formatAccelerator,
@@ -9,6 +10,7 @@ import {
   s3ObjectKey,
   sanitiseScreenshotSettings,
   screenshotFileName,
+  EDITOR_TOOLBAR_GAP,
   uniqueFileName,
   uploadProblem,
   valueAtPath
@@ -183,5 +185,22 @@ describe('S3 signing', () => {
       path: '/pics/a.png',
       region: 'auto'
     })
+  })
+})
+
+describe('editor toolbar layout', () => {
+  it('keeps one row until measured', () => {
+    expect(chooseToolbarLayout(200, 0, 0)).toBe('row')
+    expect(chooseToolbarLayout(200, 600, 0)).toBe('row')
+  })
+
+  it('keeps one row when tools and actions fit', () => {
+    expect(chooseToolbarLayout(600 + 250 + EDITOR_TOOLBAR_GAP, 600, 250)).toBe('row')
+    expect(chooseToolbarLayout(1400, 600, 250)).toBe('row')
+  })
+
+  it('splits when the window is too narrow for the row', () => {
+    expect(chooseToolbarLayout(600 + 250 + EDITOR_TOOLBAR_GAP - 1, 600, 250)).toBe('split')
+    expect(chooseToolbarLayout(664, 1000, 320)).toBe('split')
   })
 })
