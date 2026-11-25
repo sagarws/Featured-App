@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { createServer, connect, type Server, type Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Channel } from '../electron/main/remote/core/channel'
@@ -28,8 +29,8 @@ import {
   type PeerInfo
 } from '../electron/main/remote/core/handshake'
 import { AuthLimiter, WindowCounter } from '../electron/main/remote/core/limiter'
-import { dialThroughRelay, RelayHost, relayLookup } from '../electron/main/remote/core/relayClient'
-import { relayDeviceId, startRelay } from '../tools/remote-relay/relay'
+import { dialThroughRelay, onRelayIce, RelayHost, relayLookup } from '../electron/main/remote/core/relayClient'
+import { relayDeviceId, startRelay, turnFromEnv, turnGrant, type IceGrant } from '../tools/remote-relay/relay'
 
 // Small Argon2id parameters so the suite stays fast; production uses 64 MiB / t=3.
 const FAST_KDF: KdfParams = { t: 1, m: 64, p: 1 }
@@ -401,6 +402,54 @@ describe('relay (outside the office network)', () => {
     expect(h.sessions[0]?.peer.id).toBe(client.id)
     expect(h.sessions[0]?.peer.address).toMatch(/^relay:/)
     expect(result.channel).toBeInstanceOf(Channel)
+  })
+
+  it('hands both sides a short-lived TURN login that coturn (use-auth-secret) accepts', async () => {
+    const secret = 'a'.repeat(64)
+    const turn = { secret, urls: ['turn:203.0.113.9:3478?transport=udp'] }
+    const grants: IceGrant[] = []
+    onRelayIce(grant => grants.push(grant))
+    try {
+      const h = await startHost({ password: 'Correct-Horse-9' })
+      const relay = await startRelay({ port: 0, host: '127.0.0.1', log: () => undefined, turn })
+      servers.push(relay)
+      const address = relay.address()
+      const relayAddr = `127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`
+      await new Promise<void>(resolve => {
+        const host = new RelayHost(relayAddr, () => h.host, {
+          onState: state => state === 'online' && resolve(),
+          onIncoming: (socket, from) => void runHostHandshake(socket, from, h.policy)
+        })
+        host.start()
+        relayHosts.push(host)
+      })
+      sockets.push(await dialThroughRelay(relayAddr, h.host.id))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      // registered + the client's ready + the host's ready
+      expect(grants.length).toBe(3)
+      for (const grant of grants) {
+        expect(grant.urls).toEqual(turn.urls)
+        const [expiry, name] = grant.username.split(':')
+        expect(name).toBe('featured')
+        expect(Number(expiry) * 1000).toBe(grant.expiresAt)
+        expect(grant.expiresAt - Date.now()).toBeGreaterThan(11 * 3600_000)
+        // coturn's check: password = base64(HMAC-SHA1(static-auth-secret, username))
+        expect(grant.credential).toBe(createHmac('sha1', secret).update(grant.username).digest('base64'))
+      }
+    } finally {
+      onRelayIce(null)
+    }
+  })
+
+  it('reads TURN settings from the environment only when complete', () => {
+    expect(turnFromEnv({})).toBeNull()
+    expect(turnFromEnv({ TURN_SECRET: 'short', TURN_URLS: 'turn:x:3478' })).toBeNull()
+    expect(turnFromEnv({ TURN_SECRET: 'x'.repeat(32), TURN_URLS: 'http://nope' })).toBeNull()
+    expect(turnFromEnv({ TURN_SECRET: 'x'.repeat(32), TURN_URLS: 'turn:a:3478?transport=udp, turn:a:3478?transport=tcp' })?.urls).toEqual([
+      'turn:a:3478?transport=udp',
+      'turn:a:3478?transport=tcp'
+    ])
+    expect(turnGrant({ secret: 's', urls: ['turn:a'], ttlSec: 60 }, 1_000_000).expiresAt).toBe(1_060_000)
   })
 
   it('refuses to register an ID the host cannot prove', async () => {

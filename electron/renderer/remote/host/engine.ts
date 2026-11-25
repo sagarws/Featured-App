@@ -15,6 +15,14 @@ import { CandidateQueue, candidateSignal, preferCodecs } from '../rtc'
  * delaying it.
  */
 
+/**
+ * When the video goes through the TURN server (no direct path between the two
+ * networks), cap it: the server's bandwidth is shared by every relayed session.
+ * Text stays sharp at this rate; motion drops frames first.
+ */
+const RELAYED_MAX_BITRATE = 2_500_000
+const RELAYED_MAX_FRAMERATE = 30
+
 type EncodingParams = RTCRtpEncodingParameters & { priority?: string; networkPriority?: string; maxFramerate?: number }
 type SendParams = RTCRtpSendParameters & { degradationPreference?: string }
 
@@ -32,6 +40,8 @@ export const runHostEngine = async (): Promise<void> => {
   let autoStep = 0
   let lastMoveSeq = -1
   let stopped = false
+  /** Is the video going through TURN right now? */
+  let relayed = false
   const candidates = new CandidateQueue(() => pc)
 
   let lastError = ''
@@ -101,8 +111,8 @@ export const runHostEngine = async (): Promise<void> => {
     const params = sender.getParameters() as SendParams
     if (!params.encodings?.length) params.encodings = [{}]
     const encoding = params.encodings[0] as EncodingParams
-    encoding.maxBitrate = plan.maxBitrate
-    encoding.maxFramerate = plan.maxFramerate
+    encoding.maxBitrate = relayed ? Math.min(plan.maxBitrate, RELAYED_MAX_BITRATE) : plan.maxBitrate
+    encoding.maxFramerate = relayed ? Math.min(plan.maxFramerate, RELAYED_MAX_FRAMERATE) : plan.maxFramerate
     encoding.scaleResolutionDownBy = plan.scaleResolutionDownBy
     encoding.priority = 'high'
     encoding.networkPriority = 'high'
@@ -229,18 +239,33 @@ export const runHostEngine = async (): Promise<void> => {
     else if (command.type === 'stop') stop()
   })
 
-  // Auto quality: step down while the encoder is held back by bandwidth or CPU, back up when there is headroom.
+  // Every 2 s: cap the video while it goes through TURN, and (Auto quality) step
+  // down while the encoder is held back by bandwidth or CPU, back up when there is headroom.
   let limited = 0
   let headroom = 0
   setInterval(() => {
-    if (quality !== 'auto' || !sender || pc?.connectionState !== 'connected') return
+    if (!sender || pc?.connectionState !== 'connected') return
     void pc.getStats().then(report => {
       let reason = 'none'
       let available = 0
+      let pair: Record<string, unknown> | null = null
+      const candidateTypes = new Map<string, unknown>()
       report.forEach((s: Record<string, unknown>) => {
         if (s['type'] === 'outbound-rtp' && s['kind'] === 'video' && typeof s['qualityLimitationReason'] === 'string') reason = s['qualityLimitationReason']
-        if (s['type'] === 'candidate-pair' && s['nominated'] === true && typeof s['availableOutgoingBitrate'] === 'number') available = s['availableOutgoingBitrate']
+        if (s['type'] === 'candidate-pair' && s['nominated'] === true && s['state'] === 'succeeded') {
+          pair = s
+          if (typeof s['availableOutgoingBitrate'] === 'number') available = s['availableOutgoingBitrate']
+        }
+        if (s['type'] === 'local-candidate' || s['type'] === 'remote-candidate') candidateTypes.set(String(s['id']), s['candidateType'])
       })
+      const selected = pair as Record<string, unknown> | null
+      const nowRelayed = !!selected && [selected['localCandidateId'], selected['remoteCandidateId']].some(id => candidateTypes.get(String(id)) === 'relay')
+      if (nowRelayed !== relayed) {
+        relayed = nowRelayed
+        appLog('info', 'remote-host', relayed ? 'Video goes through the TURN server (no direct path); capped.' : 'Video goes direct.')
+        void applyQuality()
+      }
+      if (quality !== 'auto') return
       const { width = 1920, height = 1080 } = track?.getSettings() ?? {}
       if (reason === 'bandwidth' || reason === 'cpu') {
         headroom = 0

@@ -22,7 +22,7 @@
  * A connection that sends "GET " first is a WebSocket; one that stays silent
  * (plain TCP clients wait for the relay's nonce) is plain TCP.
  */
-import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto'
+import { createHash, createHmac, createPublicKey, randomBytes, verify } from 'node:crypto'
 import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
 import { Duplex } from 'node:stream'
 import { connect as tlsConnect } from 'node:tls'
@@ -322,10 +322,49 @@ interface Waiting {
   timer: NodeJS.Timeout
 }
 
+/**
+ * TURN for the video, when coturn runs with `use-auth-secret` (see
+ * deploy/turnserver.conf). The relay hands each app a short-lived TURN login
+ * (coturn's REST scheme: user = "<expiry>:featured", password =
+ * base64(HMAC-SHA1(secret, user))), so no TURN password ships inside the apps
+ * and a leaked one stops working by itself.
+ */
+export interface RelayTurn {
+  secret: string
+  urls: string[]
+  /** How long a login stays valid, in seconds (default 12 h; coturn also checks it when a session refreshes, so keep it longer than a session). */
+  ttlSec?: number
+}
+
+export interface IceGrant {
+  urls: string[]
+  username: string
+  credential: string
+  /** Unix ms after which the login no longer works. */
+  expiresAt: number
+}
+
+export const turnGrant = (turn: RelayTurn, now = Date.now()): IceGrant => {
+  const expiry = Math.floor(now / 1000) + (turn.ttlSec ?? 12 * 3600)
+  const username = `${expiry}:featured`
+  return { urls: turn.urls, username, credential: createHmac('sha1', turn.secret).update(username).digest('base64'), expiresAt: expiry * 1000 }
+}
+
+/** TURN_SECRET + TURN_URLS (comma-separated) from the environment, or null. */
+export const turnFromEnv = (env: NodeJS.ProcessEnv = process.env): RelayTurn | null => {
+  const secret = env['TURN_SECRET'] ?? ''
+  const urls = (env['TURN_URLS'] ?? '').split(',').map(u => u.trim()).filter(u => /^turns?:/i.test(u))
+  if (secret.length < 16 || !urls.length) return null
+  const ttl = Number(env['TURN_TTL_SEC'])
+  return { secret, urls, ...(ttl > 0 ? { ttlSec: ttl } : {}) }
+}
+
 export interface RelayOptions {
   port: number
   host?: string
   log?: (line: string) => void
+  /** Hand out TURN logins (see RelayTurn). Omitted = the apps use their own TURN settings. */
+  turn?: RelayTurn | null
 }
 
 export const startRelay = (options: RelayOptions): Promise<Server> => {
@@ -333,6 +372,9 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
   const hosts = new Map<string, RelayConn>()
   const waiting = new Map<string, Waiting>()
   const attempts = new Map<string, number[]>()
+  const turn = options.turn ?? null
+  /** Added to 'registered' and 'ready': a fresh TURN login, when this relay has a TURN server. */
+  const ice = (): Record<string, unknown> => (turn ? { ice: turnGrant(turn) } : {})
 
   const allowed = (address: string): boolean => {
     const now = Date.now()
@@ -370,9 +412,11 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
       }
       hosts.get(id)?.destroy()
       hosts.set(id, socket)
-      writeLine(socket, { op: 'registered', id })
+      writeLine(socket, { op: 'registered', id, ...ice() })
       log(`host online ${id} (${address})`)
-      const ping = setInterval(() => writeLine(socket, { op: 'ping' }), PING_MS)
+      // Once an hour (144 × 25 s) a ping also carries a fresh TURN login, so a host that stays online for days never holds an expired one.
+      let pings = 0
+      const ping = setInterval(() => writeLine(socket, { op: 'ping', ...(++pings % 144 === 0 ? ice() : {}) }), PING_MS)
       socket.on('data', () => undefined)
       socket.resume()
       socket.once('close', () => {
@@ -418,8 +462,8 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
       waiting.delete(token)
       clearTimeout(entry.timer)
       const client = entry.client
-      writeLine(client, { op: 'ready' })
-      writeLine(socket, { op: 'ready' })
+      writeLine(client, { op: 'ready', ...ice() })
+      writeLine(socket, { op: 'ready', ...ice() })
       client.pipe(socket)
       socket.pipe(client)
       client.resume()
@@ -479,5 +523,8 @@ export const RELAY_REGISTER_LABEL = REGISTER_LABEL
 const invokedDirectly = typeof process !== 'undefined' && process.argv[1] && /relay\.(ts|js|mjs)$/.test(process.argv[1])
 if (invokedDirectly) {
   const port = Number(process.argv[2] ?? process.env['RELAY_PORT'] ?? 47900)
-  void startRelay({ port }).then(() => process.stdout.write(`Featured App relay listening on :${port}\n`))
+  const turn = turnFromEnv()
+  void startRelay({ port, turn }).then(() =>
+    process.stdout.write(`Featured App relay listening on :${port}${turn ? ` · TURN logins for ${turn.urls.join(', ')}` : ' · no TURN (set TURN_SECRET + TURN_URLS)'}\n`)
+  )
 }

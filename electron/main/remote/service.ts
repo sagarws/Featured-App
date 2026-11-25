@@ -22,9 +22,9 @@ import { getWindow } from '../window'
 import { DEFAULT_KDF, kdfParamsAcceptable, legacyDeviceIdFromPublicKey, passwordVerifier } from './core/crypto'
 import { RemoteError, runClientHandshake, runHostHandshake, type HostInfo, type HostPolicy, type PeerInfo, type UnattendedSecret } from './core/handshake'
 import { AuthLimiter, WindowCounter } from './core/limiter'
-import { RelayHost } from './core/relayClient'
+import { onRelayIce, RelayHost } from './core/relayClient'
 import type { RemoteContext } from './context'
-import type { RelayConn } from '../../../tools/remote-relay/relay'
+import type { IceGrant, RelayConn } from '../../../tools/remote-relay/relay'
 import { dial, routeLabel, type Route } from './dial'
 import { Discovery } from './discovery'
 import { HostSession } from './hostSession'
@@ -90,10 +90,18 @@ const settings = (): RemoteSettings => store.getRemoteSettings()
 /** The relay in use: this computer's own setting, else the built-in server (shared/constants/remote.ts). */
 const relayInUse = (): string => settings().relay || REMOTE_SERVER.relay
 
+/** The newest TURN login from the relay (when the relay server has coturn), until it expires. */
+let relayTurn: IceGrant | null = null
+onRelayIce(grant => {
+  relayTurn = grant
+})
+
 /**
- * STUN/TURN for the video. On one network WebRTC connects directly whatever
- * is listed here; across networks it needs these (STUN to punch through NAT,
- * TURN when that fails).
+ * STUN/TURN for the video. WebRTC always tries a direct path first (same
+ * network, then through both NATs with STUN) and only sends the video through
+ * TURN when nothing direct works, so the server carries video only for the
+ * sessions that need it. TURN, in order: this computer's own setting, a
+ * short-lived login from the relay, the built-in one.
  */
 export const iceServers = (): IceServer[] => {
   const s = settings()
@@ -103,7 +111,7 @@ export const iceServers = (): IceServer[] => {
   }
   const servers: IceServer[] = []
   if (REMOTE_SERVER.stun.length) servers.push({ urls: [...REMOTE_SERVER.stun] })
-  const turn = REMOTE_SERVER.turn
+  const turn = relayTurn && relayTurn.expiresAt - Date.now() > 60_000 ? relayTurn : REMOTE_SERVER.turn
   if (turn) servers.push({ urls: [...turn.urls], username: turn.username, credential: turn.credential })
   return servers
 }

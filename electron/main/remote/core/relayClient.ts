@@ -1,5 +1,5 @@
 import { connect } from 'node:net'
-import { RELAY_REGISTER_LABEL, readLine, writeLine, wsConnect, type RelayConn } from '../../../../tools/remote-relay/relay'
+import { RELAY_REGISTER_LABEL, readLine, writeLine, wsConnect, type IceGrant, type RelayConn } from '../../../../tools/remote-relay/relay'
 import { signTranscript, type LocalIdentity } from './crypto'
 
 /*
@@ -13,6 +13,30 @@ import { signTranscript, type LocalIdentity } from './crypto'
 const splitHostPort = (relay: string): { host: string; port: number } => {
   const index = relay.lastIndexOf(':')
   return { host: relay.slice(0, index).replace(/^\[|\]$/g, ''), port: Number(relay.slice(index + 1)) }
+}
+
+/**
+ * TURN logins the relay hands out (with 'registered', 'ready' and an hourly
+ * ping). The service keeps the newest one for the video.
+ */
+let iceListener: ((grant: IceGrant) => void) | null = null
+export const onRelayIce = (listener: ((grant: IceGrant) => void) | null): void => {
+  iceListener = listener
+}
+
+/** A valid TURN login in a relay message, if there is one. */
+export const parseIceGrant = (value: unknown): IceGrant | null => {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  const urls = Array.isArray(v['urls']) ? v['urls'].filter((u): u is string => typeof u === 'string' && /^turns?:/i.test(u) && u.length < 256).slice(0, 4) : []
+  if (!urls.length || typeof v['username'] !== 'string' || typeof v['credential'] !== 'string' || typeof v['expiresAt'] !== 'number') return null
+  if (v['username'].length > 128 || v['credential'].length > 128) return null
+  return { urls, username: v['username'], credential: v['credential'], expiresAt: v['expiresAt'] }
+}
+
+const takeIce = (line: Record<string, unknown>): void => {
+  const grant = parseIceGrant(line['ice'])
+  if (grant) iceListener?.(grant)
 }
 
 /** wss://… (WebSocket, e.g. behind Cloudflare Tunnel) or host:port (plain TCP). */
@@ -56,6 +80,7 @@ export const dialThroughRelay = async (relay: string, deviceId: string): Promise
     writeLine(socket, { op: 'connect', id: deviceId })
     const answer = await readLine(socket, 15_000)
     if (answer['op'] !== 'ready') throw new Error(typeof answer['message'] === 'string' ? answer['message'] : 'The relay refused the connection.')
+    takeIce(answer)
     return socket
   } catch (error) {
     socket.destroy()
@@ -134,6 +159,7 @@ export class RelayHost {
       writeLine(socket, { op: 'register', id: identity.id, pub: identity.publicKey.toString('base64'), sig: sig.toString('base64') })
       const answer = await readLine(socket, 8000)
       if (answer['op'] !== 'registered') throw new Error(typeof answer['message'] === 'string' ? answer['message'] : 'The relay refused this computer.')
+      takeIce(answer)
     } catch (error) {
       socket.destroy()
       return this.scheduleRetry(error instanceof Error ? error.message : String(error))
@@ -154,7 +180,10 @@ export class RelayHost {
         if (this.control === socket) this.control = null
         return this.scheduleRetry(error instanceof Error ? error.message : 'Lost the relay.')
       }
-      if (line['op'] === 'ping') writeLine(socket, { op: 'pong' })
+      if (line['op'] === 'ping') {
+        writeLine(socket, { op: 'pong' })
+        takeIce(line)
+      }
       else if (line['op'] === 'incoming' && typeof line['token'] === 'string') void this.accept(line['token'], typeof line['from'] === 'string' ? line['from'] : 'relay')
     }
   }
@@ -167,6 +196,7 @@ export class RelayHost {
       writeLine(socket, { op: 'accept', token })
       const answer = await readLine(socket, 8000)
       if (answer['op'] !== 'ready') throw new Error('not ready')
+      takeIce(answer)
       this.events.onIncoming(socket, `relay:${from}`)
     } catch {
       socket?.destroy()

@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # Featured App remote server, without Docker (Ubuntu / Debian).
 #
-#   sudo bash install.sh <TURN-password> [public-ip]
+#   sudo bash install.sh [public-ip]
 #
 # Installs Node.js 24 + the relay (systemd: featured-relay) and coturn (systemd:
 # coturn), opens the firewall with ufw when it is present. Safe to run again.
 # Run it from the uploaded folder: /opt/featured-relay/deploy
 set -euo pipefail
 
-PASSWORD="${1:-}"
-PUBLIC_IP="${2:-}"
+PUBLIC_IP="${1:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TARGET=/opt/featured-relay
 
-if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo bash install.sh <TURN-password> [public-ip]"; exit 1; fi
-if [ ${#PASSWORD} -lt 12 ]; then echo "Give a TURN password of at least 12 characters: sudo bash install.sh <TURN-password> [public-ip]"; exit 1; fi
-case "$PASSWORD" in *[!A-Za-z0-9._-]*) echo "Use only letters, digits, . _ - in the TURN password."; exit 1;; esac
+if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo bash install.sh [public-ip]"; exit 1; fi
 if [ -z "$PUBLIC_IP" ]; then PUBLIC_IP="$(curl -fsS4 https://api.ipify.org || true)"; fi
-if [ -z "$PUBLIC_IP" ]; then echo "Could not find the public IP; pass it as the second argument."; exit 1; fi
+if [ -z "$PUBLIC_IP" ]; then echo "Could not find the public IP; pass it as the argument."; exit 1; fi
 
 echo "== Files → $TARGET"
 mkdir -p "$TARGET"
@@ -40,17 +37,8 @@ systemctl daemon-reload
 systemctl enable featured-relay >/dev/null
 systemctl restart featured-relay
 
-echo "== coturn (TURN, UDP/TCP 3478)"
-apt-get install -y coturn
-sed -e "s#^user=featured:.*#user=featured:$PASSWORD#" \
-    -e "s#^realm=.*#realm=$PUBLIC_IP#" \
-    -e "s#^\# external-ip=.*#external-ip=$PUBLIC_IP#" \
-    "$HERE/turnserver.conf" > /etc/turnserver.conf
-chmod 640 /etc/turnserver.conf
-chgrp turnserver /etc/turnserver.conf 2>/dev/null || true
-[ -f /etc/default/coturn ] && sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
-systemctl enable coturn >/dev/null
-systemctl restart coturn
+echo "== coturn (TURN) + TURN logins for the relay"
+bash "$HERE/setup-turn.sh" "$PUBLIC_IP"
 
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   echo "== Firewall (ufw)"
@@ -67,7 +55,5 @@ echo
 echo "Also open these in your provider's firewall / security group if it has one:"
 echo "  47900 TCP · 3478 TCP+UDP · 49160-49200 UDP"
 echo
-echo "Put these in shared/constants/remote.ts → REMOTE_SERVER:"
+echo "Put this in shared/constants/remote.ts → REMOTE_SERVER.relay (TURN needs nothing in the apps):"
 echo "  relay: '$PUBLIC_IP:47900',"
-echo "  stun: ['stun:$PUBLIC_IP:3478'],"
-echo "  turn: { urls: ['turn:$PUBLIC_IP:3478?transport=udp', 'turn:$PUBLIC_IP:3478?transport=tcp'], username: 'featured', credential: '$PASSWORD' }"

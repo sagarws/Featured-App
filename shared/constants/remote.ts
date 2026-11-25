@@ -102,9 +102,14 @@ export interface RemoteServer {
 export const REMOTE_SERVER: Readonly<RemoteServer> = {
   /** The VPS relay (plain TCP, run with PM2: `pm2 start relay.ts --interpreter node -- 47900`). */
   relay: '89.116.32.17:47900',
-  // Cloudflare's free public STUN.
-  stun: ['stun:stun.cloudflare.com:3478'],
-  // With a VPS: { urls: ['turn:IP:3478?transport=udp', 'turn:IP:3478?transport=tcp'], username: 'featured', credential: '…' }
+  // Free public STUN (two providers, so one being down does not matter). The
+  // VPS coturn answers STUN too, but these keep that load off the VPS.
+  stun: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'],
+  // Not needed when the relay hands out TURN logins (TURN_SECRET on the VPS,
+  // see tools/remote-relay/deploy/setup-turn.sh): the apps get a fresh
+  // short-lived one with every relay connection. A fixed login here is only a
+  // fallback for a relay without it:
+  // { urls: ['turn:IP:3478?transport=udp', 'turn:IP:3478?transport=tcp'], username: 'featured', credential: '…' }
   turn: null
 }
 

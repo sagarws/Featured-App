@@ -25,13 +25,13 @@ scp -r tools/remote-relay root@YOUR_VPS_IP:/opt/featured-relay
 ```bash
 ssh root@YOUR_VPS_IP
 cd /opt/featured-relay/deploy
-sudo bash install.sh YOUR-TURN-PASSWORD          # letters/digits, 12+ characters
+sudo bash install.sh
 ```
 
 It installs Node.js 24 (if needed) and coturn, starts both services, opens the
-ports in `ufw` when it is on, and finds the public IP by itself — pass it as a
-second argument if that fails: `sudo bash install.sh YOUR-TURN-PASSWORD 203.0.113.25`.
-It ends by printing the three values for the app. Running it again is safe.
+ports in `ufw` when it is on, and finds the public IP by itself — pass it as
+the argument if that fails: `sudo bash install.sh 203.0.113.25`.
+Running it again is safe.
 
 If the provider has its own firewall / security group (AWS, Azure, GCP,
 Hetzner, DigitalOcean…), open there too: **47900 TCP · 3478 TCP+UDP · 49160–49200 UDP**.
@@ -44,16 +44,40 @@ nc -vz YOUR_VPS_IP 47900          # "succeeded"
 
 ## 4. App
 
-In `shared/constants/remote.ts` → `REMOTE_SERVER`, put what install.sh printed:
-
-```ts
-relay: '203.0.113.25:47900',
-stun: ['stun:203.0.113.25:3478'],
-turn: { urls: ['turn:203.0.113.25:3478?transport=udp', 'turn:203.0.113.25:3478?transport=tcp'], username: 'featured', credential: 'YOUR-TURN-PASSWORD' },
-```
+In `shared/constants/remote.ts` → `REMOTE_SERVER.relay` (and the mobile app's
+`src/features/remote/core/constants.ts`): `relay: '203.0.113.25:47900'`.
+TURN needs nothing in the apps: see below.
 
 Build and install the new version on every computer. Remote Desktop then shows
 "Reachable from any network", and Diagnostics "relay … (built in) — online".
+
+## Video between networks (TURN), with little load on the server
+
+The relay carries only the small encrypted control connection. Video goes
+**directly** between the two devices whenever it can (same network, or through
+both routers with STUN — Cloudflare's and Google's free STUN, not the VPS).
+Only when two networks block every direct path (strict NAT, mobile carriers,
+corporate firewalls) does it go through coturn on the VPS, and then:
+
+- each app gets a **short-lived TURN login from the relay** (coturn
+  `use-auth-secret`; valid 12 h), so no TURN password ships inside the apps;
+- the sharing app **caps relayed video at 2.5 Mbit/s, 30 fps**;
+- coturn enforces **3.2 Mbit/s per session, 50 Mbit/s and 40 allocations in
+  total** (`turnserver.conf`: `max-bps`, `bps-capacity`, `total-quota`).
+
+install.sh sets this up. On a relay already running under PM2 (or systemd),
+upload the folder and run only the TURN part:
+
+```bash
+scp -r tools/remote-relay root@YOUR_VPS_IP:/root/featured-relay-upload
+ssh root@YOUR_VPS_IP 'cd /root/featured-relay-upload/deploy && bash setup-turn.sh'
+```
+
+It installs coturn, copies the new `relay.ts` over the one PM2 runs, restarts
+`featured-relay` with `TURN_SECRET` / `TURN_URLS` (kept in
+`/etc/featured-relay/turn.env`) and prints `coturn : running`. The relay log
+then starts with `· TURN logins for turn:…`. Open **3478 TCP+UDP and
+49160–49200 UDP** in the provider's firewall too.
 
 ## Without a VPS: Cloudflare Tunnel (testing)
 
@@ -77,7 +101,7 @@ Check a relay end to end from the repo:
 ## Managing it
 
 ```bash
-systemctl status featured-relay coturn        # running?
+systemctl status featured-relay coturn        # running?   (PM2: pm2 ls / pm2 logs featured-relay)
 journalctl -u featured-relay -f               # relay log
 journalctl -u coturn -f                       # TURN log
 systemctl restart featured-relay coturn       # after changing /etc/turnserver.conf
@@ -92,17 +116,11 @@ Updating the relay later: upload `relay.ts` to `/opt/featured-relay/` again and
 curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && apt install -y nodejs
 cp /opt/featured-relay/deploy/featured-relay.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now featured-relay
-
-apt install -y coturn
-cp /opt/featured-relay/deploy/turnserver.conf /etc/turnserver.conf
-nano /etc/turnserver.conf     # password after user=featured:, realm, external-ip
-sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn   # older Ubuntu
-systemctl enable --now coturn && systemctl restart coturn
-
+bash /opt/featured-relay/deploy/setup-turn.sh      # coturn + TURN logins for the relay
 ufw allow 47900/tcp && ufw allow 3478 && ufw allow 49160:49200/udp
 ```
 
-The TURN password ships inside the app, so anyone with the app could use the
-TURN server for video. The config refuses to reach private networks, which
-limits that to relaying traffic. Change the password and release a new version
-if it is ever abused.
+TURN logins expire by themselves and coturn refuses to reach private networks
+behind the server, so a copied login is worth little. To cut off every login
+at once, delete `/etc/featured-relay/turn.env` and run `setup-turn.sh` again
+(new secret).
