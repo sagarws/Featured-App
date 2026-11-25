@@ -39,8 +39,13 @@ Hetzner, DigitalOcean…), open there too: **47900 TCP · 3478 TCP+UDP · 49160�
 ## 3. Check (from any other computer)
 
 ```bash
-nc -vz YOUR_VPS_IP 47900          # "succeeded"
+nc -vz YOUR_VPS_IP 47900                      # "succeeded"
+curl http://YOUR_VPS_IP:47900/version         # {"name":"featured-remote-relay","version":"1.1.0","turn":true,"uptimeSec":42}
 ```
+
+`version` is the deployed `relay.ts` (`RELAY_VERSION`; bump it and
+`package.json` with every relay change). `turn: true` means it hands out TURN
+logins (TURN_SECRET / TURN_URLS set).
 
 ## 4. App
 

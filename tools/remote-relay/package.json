@@ -1,7 +1,10 @@
 {
   "name": "featured-remote-relay",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Optional self-hosted relay for Featured App Remote Desktop (no dependencies).",
-  "engines": { "node": ">=22.18.0" }
+  "engines": {
+    "node": ">=22.18.0"
+  }
 }

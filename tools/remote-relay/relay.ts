@@ -12,6 +12,9 @@
  *
  *   node tools/remote-relay/relay.ts [port]        (Node 22.18+; default 47900)
  *
+ * GET /version answers {"name","version","turn","uptimeSec"} as JSON, to see
+ * which relay a server runs (RELAY_VERSION below; keep package.json equal).
+ *
  * No dependencies. Line-delimited JSON during setup, raw bytes after "ready".
  *
  * Two ways in, on the same port:
@@ -26,6 +29,15 @@ import { createHash, createHmac, createPublicKey, randomBytes, verify } from 'no
 import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
 import { Duplex } from 'node:stream'
 import { connect as tlsConnect } from 'node:tls'
+
+/**
+ * This relay's version, shown on GET /version. Bump it (and package.json's
+ * "version") with every change, so a deployed server can be told apart.
+ *   1.0.0  relay over TCP and WebSocket
+ *   1.1.0  short-lived TURN logins (TURN_SECRET / TURN_URLS), GET /version
+ */
+export const RELAY_VERSION = '1.1.0'
+const STARTED_AT = Date.now()
 
 const REGISTER_LABEL = 'featured-remote-relay/v1 register'
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -197,7 +209,16 @@ const isLoopback = (address: string | undefined): boolean =>
  * this machine, the visitor's address comes from the proxy's header, so the
  * per-address limits apply to visitors rather than to the proxy.
  */
-const upgradeToWebSocket = (socket: Socket, request: Buffer): WsStream | null => {
+/** What GET /version shows. Nothing secret: no addresses, IDs or TURN details. */
+export interface RelayInfo {
+  name: 'featured-remote-relay'
+  version: string
+  /** Does this relay hand out TURN logins? */
+  turn: boolean
+  uptimeSec: number
+}
+
+const upgradeToWebSocket = (socket: Socket, request: Buffer, info: () => RelayInfo): WsStream | null => {
   const end = request.indexOf('\r\n\r\n')
   const lines = request.subarray(0, end).toString('latin1').split('\r\n')
   const headers = new Map<string, string>()
@@ -207,7 +228,15 @@ const upgradeToWebSocket = (socket: Socket, request: Buffer): WsStream | null =>
   }
   const key = headers.get('sec-websocket-key')
   if ((headers.get('upgrade') ?? '').toLowerCase() !== 'websocket' || !key) {
-    socket.end('HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\nconnection: close\r\n\r\nFeatured App relay: running.\n')
+    const path = (lines[0] ?? '').split(' ')[1] ?? '/'
+    if (path.split('?')[0] === '/version') {
+      const body = `${JSON.stringify(info())}\n`
+      socket.end(
+        `HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncache-control: no-store\r\naccess-control-allow-origin: *\r\ncontent-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`
+      )
+    } else {
+      socket.end(`HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\nconnection: close\r\n\r\nFeatured App relay ${RELAY_VERSION}: running.\n`)
+    }
     return null
   }
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${wsAccept(key)}\r\n\r\n`)
@@ -375,6 +404,7 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
   const turn = options.turn ?? null
   /** Added to 'registered' and 'ready': a fresh TURN login, when this relay has a TURN server. */
   const ice = (): Record<string, unknown> => (turn ? { ice: turnGrant(turn) } : {})
+  const info = (): RelayInfo => ({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: !!turn, uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000) })
 
   const allowed = (address: string): boolean => {
     const now = Date.now()
@@ -506,7 +536,7 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
       clearTimeout(timer)
       socket.removeListener('data', onData)
       socket.pause()
-      const ws = upgradeToWebSocket(socket, request)
+      const ws = upgradeToWebSocket(socket, request, info)
       if (ws) {
         ws.on('error', () => undefined)
         handle(ws).catch(() => ws.destroy())
@@ -525,6 +555,6 @@ if (invokedDirectly) {
   const port = Number(process.argv[2] ?? process.env['RELAY_PORT'] ?? 47900)
   const turn = turnFromEnv()
   void startRelay({ port, turn }).then(() =>
-    process.stdout.write(`Featured App relay listening on :${port}${turn ? ` · TURN logins for ${turn.urls.join(', ')}` : ' · no TURN (set TURN_SECRET + TURN_URLS)'}\n`)
+    process.stdout.write(`Featured App relay ${RELAY_VERSION} listening on :${port}${turn ? ` · TURN logins for ${turn.urls.join(', ')}` : ' · no TURN (set TURN_SECRET + TURN_URLS)'}\n`)
   )
 }

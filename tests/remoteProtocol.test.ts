@@ -30,7 +30,8 @@ import {
 } from '../electron/main/remote/core/handshake'
 import { AuthLimiter, WindowCounter } from '../electron/main/remote/core/limiter'
 import { dialThroughRelay, onRelayIce, RelayHost, relayLookup } from '../electron/main/remote/core/relayClient'
-import { relayDeviceId, startRelay, turnFromEnv, turnGrant, type IceGrant } from '../tools/remote-relay/relay'
+import { readFileSync } from 'node:fs'
+import { RELAY_VERSION, relayDeviceId, startRelay, turnFromEnv, turnGrant, type IceGrant } from '../tools/remote-relay/relay'
 
 // Small Argon2id parameters so the suite stays fast; production uses 64 MiB / t=3.
 const FAST_KDF: KdfParams = { t: 1, m: 64, p: 1 }
@@ -438,6 +439,24 @@ describe('relay (outside the office network)', () => {
       }
     } finally {
       onRelayIce(null)
+    }
+  })
+
+  it('answers GET /version with its version, and package.json says the same', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../tools/remote-relay/package.json', import.meta.url), 'utf8')) as { version: string }
+    expect(pkg.version).toBe(RELAY_VERSION)
+    for (const turn of [null, { secret: 'x'.repeat(32), urls: ['turn:a:3478'] }]) {
+      const relay = await startRelay({ port: 0, host: '127.0.0.1', log: () => undefined, turn })
+      servers.push(relay)
+      const address = relay.address()
+      const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`
+      const res = await fetch(`${base}/version`)
+      expect(res.headers.get('content-type')).toBe('application/json')
+      const body = (await res.json()) as Record<string, unknown>
+      expect(body).toMatchObject({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: turn !== null })
+      expect(Object.keys(body).sort()).toEqual(['name', 'turn', 'uptimeSec', 'version'])
+      expect(typeof body['uptimeSec']).toBe('number')
+      expect(await (await fetch(base)).text()).toContain(`relay ${RELAY_VERSION}: running`)
     }
   })
 
