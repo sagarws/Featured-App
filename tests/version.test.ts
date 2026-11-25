@@ -59,12 +59,12 @@ describe('directDownloadUrl', () => {
 })
 
 describe('updateFeedFor', () => {
-  it('has a feed for Windows 64-bit and Apple Silicon Macs only, for now', () => {
+  it('has a feed for Windows 64-bit, Apple Silicon and Intel Macs', () => {
     expect(updateFeedFor('win32', 'x64')).toMatchObject({ softwareName: 'Featured-App-x64', installer: 'exe' })
     expect(updateFeedFor('darwin', 'arm64')).toMatchObject({ softwareName: 'Featured-App-arm64', installer: 'dmg' })
     expect(updateFeedFor('darwin', 'arm64')?.url).toBe('https://check-otp-khaki.vercel.app/api/software/Featured-App-arm64')
     expect(updateFeedFor('win32', 'ia32')).toBeNull()
-    expect(updateFeedFor('darwin', 'x64')).toBeNull()
+    expect(updateFeedFor('darwin', 'x64')).toMatchObject({ softwareName: 'Featured-App-mac-x64', installer: 'dmg' })
     expect(updateFeedFor('linux', 'x64')).toBeNull()
   })
 })

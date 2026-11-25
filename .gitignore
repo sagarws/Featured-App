@@ -160,3 +160,4 @@ release/
 resources/ffmpeg/
 # Recorder: macOS helpers compiled by scripts/build-native-mac.cjs
 resources/native/
+.electron-dist/

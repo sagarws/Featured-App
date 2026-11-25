@@ -100,13 +100,8 @@ export interface RemoteServer {
 }
 
 export const REMOTE_SERVER: Readonly<RemoteServer> = {
-  /*
-   * TESTING: a Cloudflare quick tunnel to the relay on the developer's Mac
-   * (`node tools/remote-relay/relay.ts 47900` + `cloudflared tunnel --url http://localhost:47900`).
-   * Works only while that Mac is on with both running, and the name changes
-   * every time the tunnel restarts. Replace with the real server before release.
-   */
-  relay: 'wss://adjustable-myth-sounds-night.trycloudflare.com',
+  /** The VPS relay (plain TCP, run with PM2: `pm2 start relay.ts --interpreter node -- 47900`). */
+  relay: '89.116.32.17:47900',
   // Cloudflare's free public STUN.
   stun: ['stun:stun.cloudflare.com:3478'],
   // With a VPS: { urls: ['turn:IP:3478?transport=udp', 'turn:IP:3478?transport=tcp'], username: 'featured', credential: '…' }

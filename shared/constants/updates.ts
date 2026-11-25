@@ -52,10 +52,10 @@ export const UPDATE_FEEDS: Record<UpdateTarget, UpdateFeed | null> = {
   /** Mac, Apple Silicon (M1 and later). Installer: Featured-App-arm64.dmg */
   'darwin-arm64': feed('Featured-App-arm64', 'dmg'),
   /**
-   * Mac, Intel. Not published yet. Needs its OWN name in check-otp:
-   * "Featured-App-x64" is already the Windows installer.
+   * Mac, Intel (2019 and older MacBooks). Installer: Featured-App-x64.dmg.
+   * Its own name in check-otp — "Featured-App-x64" is the Windows installer.
    */
-  'darwin-x64': null,
+  'darwin-x64': feed('Featured-App-mac-x64', 'dmg'),
   /** Linux. Not published yet. */
   'linux-x64': null,
   'linux-arm64': null
