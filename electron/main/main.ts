@@ -21,6 +21,8 @@ import { registerFileShare } from './fileshare/ipc'
 import { loadTranscripts, shutdownTranscriber } from './transcriber/service'
 import { registerRemoteIpc } from './remote/ipc'
 import { configureRemoteBeforeReady, startRemoteDesktop, stopRemoteDesktop } from './remote/service'
+import { registerVpsIpc } from './vps/ipc'
+import { initVps } from './vps/manager'
 
 app.setAppUserModelId(APP_ID)
 
@@ -60,6 +62,8 @@ if (!app.requestSingleInstanceLock()) {
     registerTranscriberIpc()
     // Remote Desktop: IPC first, then the listener / discovery (it pushes status to the window).
     registerRemoteIpc()
+    // VPS Manager: IPC only; the server itself is a system service and outlives the app.
+    registerVpsIpc()
 
     const hidden = launchedHidden()
     if (hidden && process.platform === 'darwin') app.dock?.hide()
@@ -85,6 +89,7 @@ if (!app.requestSingleInstanceLock()) {
     startServer()
     startPrinterMonitor()
     startRemoteDesktop()
+    void initVps().catch(error => logger.warn('[vps] start-up check failed', error))
     startUpdateChecks()
 
     app.on('activate', () => showWindow())

@@ -11,6 +11,7 @@ import features from './sidebarFeatures.json'
  *   recorder     Recorder
  *   transcripts  Transcripts
  *   remote       Remote Desktop
+ *   vps          VPS Manager
  *   settings     Settings
  */
 export type SidebarFeature = keyof typeof features

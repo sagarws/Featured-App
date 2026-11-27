@@ -249,3 +249,22 @@ export const FILESHARE_IPC = {
   /** Push: the files of a folder changed (folder id). */
   filesChanged: 'fileshare:files-changed'
 } as const
+
+/** VPS Manager: this computer as an SSH server — see electron/main/vps. Main window only. */
+export const VPS_IPC = {
+  getStatus: 'vps:get-status',
+  systemInfo: 'vps:system-info',
+  network: 'vps:network',
+  checkPublicIp: 'vps:check-public-ip',
+  metrics: 'vps:metrics',
+  convert: 'vps:convert',
+  disconnect: 'vps:disconnect',
+  recover: 'vps:recover',
+  regeneratePassword: 'vps:regenerate-password',
+  changeLogin: 'vps:change-login',
+  revealPassword: 'vps:reveal-password',
+  setAccessMode: 'vps:set-access-mode',
+  clearSteps: 'vps:clear-steps',
+  /** Push: VpsStatus, on every change. */
+  status: 'vps:status'
+} as const

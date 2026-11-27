@@ -11,6 +11,7 @@ import ScreenshotPage from './screenshot/ScreenshotPage'
 import FileSharePage from './fileshare/FileSharePage'
 import TranscriptPage from './transcriber/TranscriptPage'
 import RemoteDesktopPage from './remote/RemoteDesktopPage'
+import VpsManagerPage from './vps/VpsManagerPage'
 import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
@@ -39,6 +40,7 @@ const App = ({ state }: { state: AgentState }) => {
           {page === 'recorder' && <RecorderPage />}
           {page === 'transcripts' && <TranscriptPage />}
           {page === 'remote' && <RemoteDesktopPage />}
+          {page === 'vps' && <VpsManagerPage />}
           {page === 'settings' && <SettingsPage state={state} />}
           {page === null && <Box sx={{ color: 'text.secondary', textAlign: 'center', mt: 10 }}>No features are switched on in shared/constants/sidebarFeatures.json.</Box>}
         </Box>

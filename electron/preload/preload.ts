@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
-import { FILESHARE_IPC, GOOGLE_IPC, IPC, RECORDER_IPC, REMOTE_IPC, SCREENSHOT_IPC, TRANSCRIBER_IPC } from '@shared/constants/channels'
+import { FILESHARE_IPC, GOOGLE_IPC, IPC, RECORDER_IPC, REMOTE_IPC, SCREENSHOT_IPC, TRANSCRIBER_IPC, VPS_IPC } from '@shared/constants/channels'
 import type { AgentState, Result, ThemeMode, UpdateStatus } from '@shared/types/agent'
 import type {
   ConnectRequest,
@@ -42,6 +42,7 @@ import type {
   ThumbnailTimeout,
   WindowChoice
 } from '@shared/types/screenshot'
+import type { VpsAccessMode, VpsConvertOptions, VpsDisconnectOptions, VpsLoginChange, VpsMetrics, VpsNetwork, VpsStatus, VpsSystemInfo } from '@shared/types/vps'
 import type { TranscriptExportFormat, TranscriptJob, TranscriptLanguage, TranscriptModel, TranscriptModelInfo } from '@shared/types/transcriber'
 
 /** Subscribe to a push channel; returns the unsubscribe. */
@@ -324,6 +325,27 @@ const api = {
         listener: (command: { type: 'start' } | { type: 'stop' } | { type: 'recapture' } | { type: 'quality'; preset: QualityPreset; priority: QualityPriority } | { type: 'display'; id: string }) => void
       ): (() => void) => on(REMOTE_IPC.engineCommand, listener)
     }
+  },
+
+  /** VPS Manager — see electron/main/vps. Fixed operations only: no commands, paths or scripts cross this bridge. */
+  vps: {
+    getStatus: (): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.getStatus),
+    systemInfo: (): Promise<Result<VpsSystemInfo>> => ipcRenderer.invoke(VPS_IPC.systemInfo),
+    network: (): Promise<Result<VpsNetwork>> => ipcRenderer.invoke(VPS_IPC.network),
+    /** Asks api.ipify.org — only when the user presses the button. */
+    checkPublicIp: (): Promise<Result<VpsNetwork>> => ipcRenderer.invoke(VPS_IPC.checkPublicIp),
+    metrics: (): Promise<Result<VpsMetrics>> => ipcRenderer.invoke(VPS_IPC.metrics),
+    convert: (options: VpsConvertOptions): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.convert, options),
+    disconnect: (options: VpsDisconnectOptions): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.disconnect, options),
+    recover: (): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.recover),
+    /** A typed password, or none for a strong generated one. */
+    regeneratePassword: (password?: string): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.regeneratePassword, password),
+    /** New username (and password): a new name re-creates the server with two administrator prompts. */
+    changeLogin: (change: VpsLoginChange): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.changeLogin, change),
+    revealPassword: (): Promise<Result<string>> => ipcRenderer.invoke(VPS_IPC.revealPassword),
+    setAccessMode: (mode: VpsAccessMode): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.setAccessMode, mode),
+    clearSteps: (): Promise<Result<VpsStatus>> => ipcRenderer.invoke(VPS_IPC.clearSteps),
+    onStatus: (listener: (status: VpsStatus) => void): (() => void) => on(VPS_IPC.status, listener)
   }
 }
 

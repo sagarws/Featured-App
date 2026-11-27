@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
-import { ConnectedTvOutlined, CropFree, FiberSmartRecordOutlined, FolderSharedOutlined, SubtitlesOutlined } from '@mui/icons-material'
+import { ConnectedTvOutlined, CropFree, DnsOutlined, FiberSmartRecordOutlined, FolderSharedOutlined, SubtitlesOutlined } from '@mui/icons-material'
 import type { AgentState } from '@shared/types/agent'
 import { isFeatureEnabled } from '@shared/constants/sidebarFeatures'
 import { SIDEBAR } from '../theme/brand'
 import logo from '../assets/app-icon.png'
 
-export type Page = 'home' | 'screenshots' | 'fileshare' | 'recorder' | 'transcripts' | 'remote' | 'settings'
+export type Page = 'home' | 'screenshots' | 'fileshare' | 'recorder' | 'transcripts' | 'remote' | 'vps' | 'settings'
 
 // A Tabler class from styles/icons.css, or a component for icons not in that set.
 const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
@@ -16,6 +16,7 @@ const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'recorder', label: 'Recorder', icon: <FiberSmartRecordOutlined sx={{ fontSize: 20 }} /> },
   { id: 'transcripts', label: 'Transcripts', icon: <SubtitlesOutlined sx={{ fontSize: 20 }} /> },
   { id: 'remote', label: 'Remote Desktop', icon: <ConnectedTvOutlined sx={{ fontSize: 20 }} /> },
+  { id: 'vps', label: 'VPS Manager', icon: <DnsOutlined sx={{ fontSize: 20 }} /> },
   { id: 'settings', label: 'Settings', icon: 'tabler-settings' }
 ]
 
