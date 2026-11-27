@@ -1,15 +1,16 @@
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import { ConnectedTvOutlined, CropFree, DnsOutlined, FiberSmartRecordOutlined, FolderSharedOutlined, SubtitlesOutlined } from '@mui/icons-material'
 import type { AgentState } from '@shared/types/agent'
-import { isFeatureEnabled } from '@shared/constants/sidebarFeatures'
+import type { FeatureAccess } from '@shared/constants/sidebarFeatures'
+import FeatureAccessDialog from './FeatureAccessDialog'
 import { SIDEBAR } from '../theme/brand'
 import logo from '../assets/app-icon.png'
 
 export type Page = 'home' | 'screenshots' | 'fileshare' | 'recorder' | 'transcripts' | 'remote' | 'vps' | 'settings'
 
 // A Tabler class from styles/icons.css, or a component for icons not in that set.
-const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
+export const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'home', label: 'Home', icon: 'tabler-smart-home' },
   { id: 'screenshots', label: 'Screenshots', icon: <CropFree sx={{ fontSize: 20 }} /> },
   { id: 'fileshare', label: 'File Share', icon: <FolderSharedOutlined sx={{ fontSize: 20 }} /> },
@@ -20,16 +21,33 @@ const ALL_NAV: { id: Page; label: string; icon: string | ReactNode }[] = [
   { id: 'settings', label: 'Settings', icon: 'tabler-settings' }
 ]
 
-/** The sidebar items switched on in shared/constants/sidebarFeatures.json, in sidebar order. */
-export const NAV = ALL_NAV.filter(item => isFeatureEnabled(item.id))
+/** The sidebar items switched on for this computer (feature-access.json), in sidebar order. */
+export const navItems = (access: FeatureAccess) => ALL_NAV.filter(item => access[item.id] === true)
 
-/** Can this page be shown? (Switched off in sidebarFeatures.json = no.) */
-export const pageEnabled = (page: Page): boolean => NAV.some(item => item.id === page)
+/** Can this page be shown? (Tab switched off = no.) */
+export const pageEnabled = (access: FeatureAccess, page: Page): boolean => access[page] === true
 
 /** Where the app opens: Home, or the first enabled feature. */
-export const firstPage = (): Page | null => (pageEnabled('home') ? 'home' : (NAV[0]?.id ?? null))
+export const firstPage = (access: FeatureAccess): Page | null => (pageEnabled(access, 'home') ? 'home' : (navItems(access)[0]?.id ?? null))
+
+/** Clicks on the logo, each within this long of the last, that open the tab-access dialog. */
+const SECRET_CLICKS = 5
+const SECRET_CLICK_GAP_MS = 800
 
 const Sidebar = ({ page, onNavigate, state }: { page: Page | null; onNavigate: (page: Page) => void; state: AgentState }) => {
+  const NAV = navItems(state.featureAccess)
+  const [accessOpen, setAccessOpen] = useState(false)
+  const clicks = useRef({ count: 0, last: 0 })
+  const logoClick = () => {
+    const now = Date.now()
+    const c = clicks.current
+    c.count = now - c.last <= SECRET_CLICK_GAP_MS ? c.count + 1 : 1
+    c.last = now
+    if (c.count >= SECRET_CLICKS) {
+      c.count = 0
+      setAccessOpen(true)
+    }
+  }
   const online = state.server.state === 'listening'
   const starting = state.server.state === 'starting'
 
@@ -51,7 +69,7 @@ const Sidebar = ({ page, onNavigate, state }: { page: Page | null; onNavigate: (
         ...theme.applyStyles('dark', { bgcolor: SIDEBAR.bgDark, borderInlineEnd: `1px solid ${SIDEBAR.panelBorder}` })
       })}
     >
-      <Stack direction='row' spacing={1.5} alignItems='center' sx={{ px: 1.5, mb: 6 }}>
+      <Stack direction='row' spacing={1.5} alignItems='center' onClick={logoClick} sx={{ px: 1.5, mb: 6, userSelect: 'none', cursor: 'default' }}>
         <Box component='img' src={logo} alt='' sx={{ width: 32, height: 32, borderRadius: '8px' }} />
         <Typography sx={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>Featured App</Typography>
       </Stack>
@@ -120,6 +138,8 @@ const Sidebar = ({ page, onNavigate, state }: { page: Page | null; onNavigate: (
       </Box>
 
       <Typography sx={{ color: SIDEBAR.textMuted, fontSize: 12, px: 1.5 }}>v{state.version}</Typography>
+
+      <FeatureAccessDialog open={accessOpen} access={state.featureAccess} onClose={() => setAccessOpen(false)} />
     </Box>
   )
 }

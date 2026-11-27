@@ -15,10 +15,13 @@ import VpsManagerPage from './vps/VpsManagerPage'
 import SystemAudioPermissionDialog from './recorder/components/SystemAudioPermissionDialog'
 
 const App = ({ state }: { state: AgentState }) => {
-  const [page, setPageState] = useState<Page | null>(firstPage)
-  // Disabled features (sidebarFeatures.json) cannot be opened from anywhere.
+  const access = state.featureAccess
+  const [chosen, setChosen] = useState<Page | null>(() => firstPage(access))
+  // A tab switched off while open (or none chosen yet): show the first one allowed instead.
+  const page = chosen !== null && pageEnabled(access, chosen) ? chosen : firstPage(access)
+  // Disabled tabs (feature-access.json) cannot be opened from anywhere.
   const setPage = (next: Page) => {
-    if (pageEnabled(next)) setPageState(next)
+    if (pageEnabled(access, next)) setChosen(next)
   }
   const [query, setQuery] = useState('')
 
@@ -42,7 +45,7 @@ const App = ({ state }: { state: AgentState }) => {
           {page === 'remote' && <RemoteDesktopPage />}
           {page === 'vps' && <VpsManagerPage />}
           {page === 'settings' && <SettingsPage state={state} />}
-          {page === null && <Box sx={{ color: 'text.secondary', textAlign: 'center', mt: 10 }}>No features are switched on in shared/constants/sidebarFeatures.json.</Box>}
+          {page === null && <Box sx={{ color: 'text.secondary', textAlign: 'center', mt: 10 }}>No features are switched on for this computer.</Box>}
         </Box>
       </Box>
       {/* The recorder reports through react-hot-toast. */}

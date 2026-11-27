@@ -7,6 +7,8 @@ import { logger } from './logger'
 import { cancelQueueJob, clearPrinterQueue, findPrinter, refreshPrinters, releaseQueueJob, resumePrinter } from './printers'
 import { buildTestPdf } from './print/testPage'
 import { updateSettings } from './settings'
+import { checkAccessPassword, setFeatureAccess } from './featureAccess'
+import { isSidebarFeature } from '@shared/constants/sidebarFeatures'
 import { notify, snapshot } from './state'
 import { checkForUpdates, installUpdate, onAutoUpdateChanged, openUpdateLink } from './updates'
 import { isRendererUrl } from './window'
@@ -185,6 +187,23 @@ export const registerIpc = (): void => {
     if (!fromRenderer(event)) return refused
     if (typeof enabled !== 'boolean') return { ok: false, error: 'Expected on or off.' }
     setOpenAtLogin(enabled)
+    return { ok: true, value: undefined }
+  })
+
+  ipcMain.handle(IPC.checkAccessPassword, (event, password: unknown): Result => {
+    if (!fromRenderer(event)) return refused
+    const check = checkAccessPassword(password)
+    return check.ok ? { ok: true, value: undefined } : check
+  })
+
+  // The password goes with every change, so the window never holds an "unlocked" flag main must trust.
+  ipcMain.handle(IPC.setFeatureAccess, (event, password: unknown, id: unknown, enabled: unknown): Result => {
+    if (!fromRenderer(event)) return refused
+    const check = checkAccessPassword(password)
+    if (!check.ok) return check
+    if (!isSidebarFeature(id) || typeof enabled !== 'boolean') return { ok: false, error: 'Unknown tab.' }
+    setFeatureAccess(id, enabled)
+    notify()
     return { ok: true, value: undefined }
   })
 }

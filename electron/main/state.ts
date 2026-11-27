@@ -3,6 +3,7 @@ import { ALLOWED_ORIGINS } from '@shared/constants/agent'
 import type { AgentPrinter, AgentState, PrintJob, ServerStatus, UpdateStatus } from '@shared/types/agent'
 import { logger } from './logger'
 import { getSettings } from './settings'
+import { getFeatureAccess } from './featureAccess'
 
 /**
  * Everything the window shows, held in one place and pushed to it whole on
@@ -43,7 +44,8 @@ export const snapshot = (): AgentState => {
     notifications: getSettings().notifications,
     autoUpdate: getSettings().autoUpdate,
     logPath: logger.path(),
-    jobs
+    jobs,
+    featureAccess: getFeatureAccess()
   }
 }
 

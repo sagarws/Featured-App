@@ -20,6 +20,9 @@ export const IPC = {
   installUpdate: 'agent:install-update',
   openUpdateLink: 'agent:open-update-link',
   setAutoUpdate: 'agent:set-auto-update',
+  /** Sidebar tab access: check the password, switch one tab on or off. */
+  checkAccessPassword: 'agent:check-access-password',
+  setFeatureAccess: 'agent:set-feature-access',
   /** One-way: a log line from the window (API calls, crashes) for the terminal and agent.log. */
   log: 'agent:log'
 } as const

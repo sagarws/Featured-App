@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { FILESHARE_IPC, GOOGLE_IPC, IPC, RECORDER_IPC, REMOTE_IPC, SCREENSHOT_IPC, TRANSCRIBER_IPC, VPS_IPC } from '@shared/constants/channels'
 import type { AgentState, Result, ThemeMode, UpdateStatus } from '@shared/types/agent'
+import type { SidebarFeature } from '@shared/constants/sidebarFeatures'
 import type {
   ConnectRequest,
   HistoryEntry,
@@ -87,6 +88,11 @@ const api = {
   openUpdateLink: (): Promise<Result> => ipcRenderer.invoke(IPC.openUpdateLink),
   /** Settings → Auto update. */
   setAutoUpdate: (enabled: boolean): Promise<Result> => ipcRenderer.invoke(IPC.setAutoUpdate, enabled),
+  /** Sidebar tab access: is this the access password? */
+  checkAccessPassword: (password: string): Promise<Result> => ipcRenderer.invoke(IPC.checkAccessPassword, password),
+  /** Switch one sidebar tab on or off (needs the access password). */
+  setFeatureAccess: (password: string, id: SidebarFeature, enabled: boolean): Promise<Result> =>
+    ipcRenderer.invoke(IPC.setFeatureAccess, password, id, enabled),
   /** Write a line to the terminal and agent.log. One-way, never waits. */
   log: (level: 'info' | 'warn' | 'error', scope: string, message: string): void =>
     ipcRenderer.send(IPC.log, level, scope, message),

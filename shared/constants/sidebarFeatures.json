@@ -1,10 +1,10 @@
 {
   "home": true,
   "screenshots": true,
-  "fileshare": true,
-  "recorder": true,
-  "transcripts": true,
-  "remote": true,
-  "vps": true,
-  "settings": true
+  "fileshare": false,
+  "recorder": false,
+  "transcripts": false,
+  "remote": false,
+  "vps": false,
+  "settings": false
 }

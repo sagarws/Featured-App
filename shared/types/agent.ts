@@ -1,3 +1,5 @@
+import type { FeatureAccess } from '../constants/sidebarFeatures'
+
 
 /**
  * What a printer is doing, as one word. Worked out from the OS queue (paused?
@@ -184,6 +186,8 @@ export interface AgentState {
   /** Where the agent writes its log, for support. */
   logPath: string | null
   jobs: PrintJob[]
+  /** Which sidebar tabs are switched on for this computer (feature-access.json). */
+  featureAccess: FeatureAccess
 }
 
 /** Result of a call from the window that can fail with something to show. */

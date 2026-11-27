@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly MAIN_VITE_GOOGLE_CLIENT_SECRET?: string
   /** Must be an Authorized redirect URI of that client. Default http://localhost:3000/oauth2callback. */
   readonly MAIN_VITE_GOOGLE_REDIRECT_URI?: string
+  /** Password for the sidebar tab-access dialog (logo clicked 5 times). */
+  readonly MAIN_VITE_FEATURE_ACCESS_PASSWORD?: string
 }
 
 interface ImportMeta {
