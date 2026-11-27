@@ -4,7 +4,7 @@ import { RELAY_TUNNEL_LABEL, readLine, relayDeviceId, writeLine, type RelayConn 
 import { openRelay } from '../remote/core/relayClient'
 
 /*
- * VPS Manager's SSH tunnel through the relay (tools/remote-relay, 1.2.0+).
+ * VPS Manager's SSH tunnel through the relay (tools/remote-relay, 2.0.0+).
  * No Electron here, so it is tested over real TCP.
  *
  *   control   one outbound connection, registered with an Ed25519 proof;

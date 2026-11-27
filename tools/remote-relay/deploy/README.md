@@ -131,7 +131,7 @@ behind the server, so a copied login is worth little. To cut off every login
 at once, delete `/etc/featured-relay/turn.env` and run `setup-turn.sh` again
 (new secret).
 
-## SSH tunnels for VPS Manager (relay 1.2.0+)
+## SSH tunnels for VPS Manager (relay 2.0.0+)
 
 VPS Manager's **Internet (relay)** mode reaches a computer behind any router
 or CGNAT: the computer keeps an outbound connection to this relay, which
@@ -153,7 +153,7 @@ Update an existing server (the relay is one file):
 scp tools/remote-relay/relay.ts tools/remote-relay/package.json root@RELAY_IP:/opt/featured-relay/
 ssh root@RELAY_IP 'systemctl restart featured-relay || pm2 restart all'
 ssh root@RELAY_IP 'command -v ufw >/dev/null && ufw allow 22000:22999/tcp'
-curl http://RELAY_IP:47900/version     # "version":"1.2.0", "tunnels":true
+curl http://RELAY_IP:47900/version     # "version":"2.0.0", "tunnels":true
 ```
 
 Also open 22000–22999 TCP in the provider's firewall, if it has one.

@@ -35,9 +35,9 @@ import { connect as tlsConnect } from 'node:tls'
  * "version") with every change, so a deployed server can be told apart.
  *   1.0.0  relay over TCP and WebSocket
  *   1.1.0  short-lived TURN logins (TURN_SECRET / TURN_URLS), GET /version
- *   1.2.0  SSH tunnels for VPS Manager: a public port per computer (SSH_TUNNEL_PORTS)
+ *   2.0.0  SSH tunnels for VPS Manager: a public port per computer (SSH_TUNNEL_PORTS)
  */
-export const RELAY_VERSION = '1.2.0'
+export const RELAY_VERSION = '2.0.0'
 const STARTED_AT = Date.now()
 
 const REGISTER_LABEL = 'featured-remote-relay/v1 register'
@@ -614,7 +614,7 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
 
     if (first['op'] === 'tunnel-register') {
       if (!options.tunnels) {
-        writeLine(socket, { op: 'error', message: 'This relay does not offer SSH tunnels (it needs relay 1.2.0 with SSH_TUNNEL_PORTS).' })
+        writeLine(socket, { op: 'error', message: 'This relay does not offer SSH tunnels (it needs relay 2.0.0 with SSH_TUNNEL_PORTS).' })
         return void socket.end()
       }
       if (!proves(first, nonce, TUNNEL_LABEL)) {

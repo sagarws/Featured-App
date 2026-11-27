@@ -114,7 +114,7 @@ config for every account.
 The third access mode. It reaches this computer from any network, with plain
 `ssh` and nothing to install, through the same relay VPS Remote Desktop
 uses (`REMOTE_SERVER.relay`, which must be a plain-TCP relay on a public
-VPS running relay 1.2.0+).
+VPS running relay 2.0.0+).
 
 ```
 this computer ──outbound──▶ relay 89.116.32.17 ◀── ssh user@89.116.32.17 -p 22xxx
