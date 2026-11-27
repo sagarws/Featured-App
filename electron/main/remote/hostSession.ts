@@ -12,6 +12,10 @@ import { parseSignal } from './signal'
 import type { RemoteContext } from './context'
 import { createHostEngineWindow } from './windows'
 
+/** Lock-screen pictures: fast for this long after input, else one per SECURE_IDLE_MS. */
+const SECURE_ACTIVE_MS = 3000
+const SECURE_IDLE_MS = 2000
+
 /*
  * One incoming session, on the computer being controlled. Everything that
  * matters for safety is decided here, in the main process, not in any window:
@@ -52,6 +56,8 @@ export class HostSession {
   private secureBusy = false
   private lastSecureHash = ''
   private lastSecureAt = 0
+  /** Last input onto the lock screen: pictures come fast for a few seconds after it. */
+  private lastSecureInputAt = 0
   private ticker: NodeJS.Timeout | null = null
   private resumeTimer: NodeJS.Timeout | null = null
   private lastClipboard = ''
@@ -228,7 +234,10 @@ export class HostSession {
     if (!this.canControl()) return
     if (this.locked) {
       // The normal helper cannot reach the lock screen; the SYSTEM agent can (Windows).
-      if (this.ctx.secure.available()) for (const event of events) this.ctx.secure.inject(event)
+      if (this.ctx.secure.available()) {
+        this.lastSecureInputAt = Date.now()
+        for (const event of events) this.ctx.secure.inject(event)
+      }
       return
     }
     const display = screen.getAllDisplays().find(d => String(d.id) === this.displayId) ?? screen.getPrimaryDisplay()
@@ -343,15 +352,26 @@ export class HostSession {
     if (this.state !== 'ended') this.engine?.webContents.send(REMOTE_IPC.engineCommand, { type: 'recapture' })
   }
 
-  /** A picture of the lock screen, about 4 a second, only when it changed (or every 2 s). */
+  /**
+   * A picture of the lock screen: 4 a second for 3 s after input (typing the
+   * password, clicking), otherwise one every 2 s. The clock and the blinking
+   * caret change every picture, so "only when changed" alone sent all of
+   * them, and a phone (which decrypts each in JavaScript) fell seconds behind.
+   */
   private async pumpSecureFrame(): Promise<void> {
     if (this.secureBusy || !this.locked || this.state !== 'active' || !this.channel || !this.ctx.secure.available()) return
+    const now = Date.now()
+    const active = now - this.lastSecureInputAt < SECURE_ACTIVE_MS
+    if (!active && now - this.lastSecureAt < SECURE_IDLE_MS) return
     this.secureBusy = true
     try {
-      const frame = await this.ctx.secure.frame(1920, 60)
+      // 1280 wide is plenty for a lock screen, and light enough for a phone
+      // (it decrypts and decodes each picture in JavaScript; full-size
+      // pictures 4 times a second made it lag).
+      const frame = await this.ctx.secure.frame(1280, 55)
       if (!frame || !this.locked || !this.channel) return
       const hash = createHash('sha1').update(frame.jpeg).digest('hex')
-      if (hash === this.lastSecureHash && Date.now() - this.lastSecureAt < 2000) return
+      if (hash === this.lastSecureHash && Date.now() - this.lastSecureAt < SECURE_IDLE_MS) return
       this.lastSecureHash = hash
       this.lastSecureAt = Date.now()
       this.channel.send({ t: 'secure-frame', width: frame.width, height: frame.height }, frame.jpeg)

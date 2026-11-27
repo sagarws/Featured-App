@@ -369,3 +369,39 @@ export const groupHistory = (history: HistoryEntry[]): HistoryGroup[] => {
   }
   return [...groups.values()].sort((a, b) => b.latest.at - a.latest.at)
 }
+
+const SHIFTED_DIGITS = ')!@#$%^&*('
+const PUNCTUATION: Record<string, [string, string]> = {
+  Minus: ['-', '_'],
+  Equal: ['=', '+'],
+  BracketLeft: ['[', '{'],
+  BracketRight: [']', '}'],
+  Backslash: ['\\', '|'],
+  Semicolon: [';', ':'],
+  Quote: ["'", '"'],
+  Backquote: ['`', '~'],
+  Comma: [',', '<'],
+  Period: ['.', '>'],
+  Slash: ['/', '?']
+}
+
+/**
+ * A character → the US-layout key that types it (KeyboardEvent.code) and
+ * whether Shift is needed; null when no key types it. Used where typed text
+ * must become real key presses: the macOS lock screen ignores text events.
+ */
+export const keyForChar = (ch: string): { code: string; shift: boolean } | null => {
+  if (ch === ' ') return { code: 'Space', shift: false }
+  if (ch === '\n' || ch === '\r') return { code: 'Enter', shift: false }
+  if (ch === '\t') return { code: 'Tab', shift: false }
+  if (/^[a-z]$/.test(ch)) return { code: `Key${ch.toUpperCase()}`, shift: false }
+  if (/^[A-Z]$/.test(ch)) return { code: `Key${ch}`, shift: true }
+  if (/^[0-9]$/.test(ch)) return { code: `Digit${ch}`, shift: false }
+  const shiftedDigit = SHIFTED_DIGITS.indexOf(ch)
+  if (shiftedDigit >= 0) return { code: `Digit${shiftedDigit}`, shift: true }
+  for (const [code, [plain, shifted]] of Object.entries(PUNCTUATION)) {
+    if (ch === plain) return { code, shift: false }
+    if (ch === shifted) return { code, shift: true }
+  }
+  return null
+}

@@ -4,6 +4,7 @@ import { release } from 'node:os'
 import { join } from 'node:path'
 import { app, screen, systemPreferences, type Display } from 'electron'
 import type { InputEvent, PermissionStatus } from '@shared/types/remote'
+import { keyForChar } from '@shared/utils/remote'
 import type { MacLockScreen } from '../secureDesktop'
 import { logger } from '../../logger'
 import { platform } from '../store'
@@ -205,7 +206,20 @@ export class InputInjector {
         return shot ? { width: shot.width, height: shot.height, jpeg: shot.jpeg } : null
       },
       // The lock screen is on the main display; its frame is that display.
-      inject: event => this.inject(event, screen.getPrimaryDisplay()),
+      // It ignores typed-text events (a phone sends those), so text becomes
+      // real key presses there.
+      inject: event => {
+        const display = screen.getPrimaryDisplay()
+        if (event.k !== 'tx') return this.inject(event, display)
+        for (const ch of Array.from(event.t)) {
+          const key = keyForChar(ch)
+          if (!key) continue
+          if (key.shift) this.inject({ k: 'kd', c: 'ShiftLeft' }, display)
+          this.inject({ k: 'kd', c: key.code }, display)
+          this.inject({ k: 'ku', c: key.code }, display)
+          if (key.shift) this.inject({ k: 'ku', c: 'ShiftLeft' }, display)
+        }
+      },
       releaseAll: () => this.releaseAll()
     }
   }
