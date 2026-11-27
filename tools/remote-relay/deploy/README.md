@@ -34,7 +34,8 @@ the argument if that fails: `sudo bash install.sh 203.0.113.25`.
 Running it again is safe.
 
 If the provider has its own firewall / security group (AWS, Azure, GCP,
-Hetzner, DigitalOcean…), open there too: **47900 TCP · 3478 TCP+UDP · 49160–49200 UDP**.
+Hetzner, DigitalOcean…), open there too: **47900 TCP · 3478 TCP+UDP · 49160–49200 UDP · 22000–22999 TCP**
+(the last range is for VPS Manager's SSH tunnels — see below).
 
 ## 3. Check (from any other computer)
 
@@ -129,3 +130,30 @@ TURN logins expire by themselves and coturn refuses to reach private networks
 behind the server, so a copied login is worth little. To cut off every login
 at once, delete `/etc/featured-relay/turn.env` and run `setup-turn.sh` again
 (new secret).
+
+## SSH tunnels for VPS Manager (relay 1.2.0+)
+
+VPS Manager's **Internet (relay)** mode reaches a computer behind any router
+or CGNAT: the computer keeps an outbound connection to this relay, which
+gives it a public port in **22000–22999** (`SSH_TUNNEL_PORTS`, default; set
+`SSH_TUNNEL_PORTS=off` to disable). Anyone can then run
+`ssh user@RELAY_IP -p <port>`. SSH stays end-to-end encrypted and
+host-key-verified; the relay only copies bytes.
+
+Protection on the relay, per visitor address and per computer:
+
+- more than 10 new connections a minute → banned for 10 minutes
+- at most 4 open connections
+- bans requested by the computer: 3 wrong passwords → 1 hour
+- the port closes as soon as the computer goes offline
+
+Update an existing server (the relay is one file):
+
+```bash
+scp tools/remote-relay/relay.ts tools/remote-relay/package.json root@RELAY_IP:/opt/featured-relay/
+ssh root@RELAY_IP 'systemctl restart featured-relay || pm2 restart all'
+ssh root@RELAY_IP 'command -v ufw >/dev/null && ufw allow 22000:22999/tcp'
+curl http://RELAY_IP:47900/version     # "version":"1.2.0", "tunnels":true
+```
+
+Also open 22000–22999 TCP in the provider's firewall, if it has one.

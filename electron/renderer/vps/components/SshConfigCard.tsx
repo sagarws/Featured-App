@@ -1,7 +1,7 @@
-import { Alert, Box, Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import { DataObjectOutlined, TerminalOutlined } from '@mui/icons-material'
 import toast from 'react-hot-toast'
-import type { VpsAccessMode } from '@shared/types/vps'
+import type { VpsAccessMode, VpsTunnelStatus } from '@shared/types/vps'
 import { sshCommand, sshConfigJson } from '@shared/utils/vps'
 import SectionCard from '../../components/SectionCard'
 import { MONO } from './ui'
@@ -20,20 +20,22 @@ const Code = ({ children }: { children: string }) => (
  * from the live server values with JSON.stringify. Never the password.
  */
 const SshConfigCard = ({
-  host,
+  endpoint,
   username,
-  port,
   mode,
+  tunnel,
+  passwordWeak,
   onModeChange
 }: {
-  host: string | null
+  endpoint: { host: string; port: number } | null
   username: string
-  port: number
   mode: VpsAccessMode
+  tunnel: VpsTunnelStatus
+  passwordWeak: boolean
   onModeChange: (mode: VpsAccessMode) => void
 }) => {
-  const json = host ? sshConfigJson(host, username, port) : null
-  const command = host ? sshCommand(host, username, port) : null
+  const json = endpoint ? sshConfigJson(endpoint.host, username, endpoint.port) : null
+  const command = endpoint ? sshCommand(endpoint.host, username, endpoint.port) : null
 
   const copy = async (text: string | null, what: string) => {
     if (!text) return
@@ -51,14 +53,36 @@ const SshConfigCard = ({
         <ToggleButtonGroup exclusive size='small' value={mode} onChange={(_e, v: VpsAccessMode | null) => v && onModeChange(v)}>
           <ToggleButton value='local'>Local network</ToggleButton>
           <ToggleButton value='vpn'>VPN</ToggleButton>
+          <ToggleButton value='relay'>Internet (relay)</ToggleButton>
         </ToggleButtonGroup>
 
-        {!host ? (
-          <Alert severity='warning'>
-            {mode === 'vpn'
-              ? 'No VPN address found. Connect Tailscale or WireGuard on this computer and it appears here.'
-              : 'This computer has no local network address right now.'}
+        {mode === 'relay' && (
+          <Alert
+            severity={tunnel.state === 'online' ? 'success' : tunnel.state === 'error' ? 'error' : 'info'}
+            icon={tunnel.state === 'connecting' ? <CircularProgress size={18} /> : undefined}
+          >
+            {tunnel.state === 'online'
+              ? `Reachable from any internet connection through the relay ${tunnel.host ?? ''}. Visitors with 3 wrong passwords are banned for an hour.`
+              : tunnel.state === 'error'
+                ? `The relay is not reachable: ${tunnel.error ?? 'unknown error'}. Retrying automatically.`
+                : 'Connecting to the relay…'}
+            {tunnel.state === 'online' && tunnel.bannedRecently > 0 && ` ${tunnel.bannedRecently} address(es) banned in the last hour.`}
           </Alert>
+        )}
+        {mode === 'relay' && passwordWeak && (
+          <Alert severity='warning'>
+            Your password is weak, and in this mode anyone on the internet can try it. Use <b>Change username / password</b> to set a longer one.
+          </Alert>
+        )}
+
+        {!endpoint ? (
+          mode === 'relay' ? null : (
+            <Alert severity='warning'>
+              {mode === 'vpn'
+                ? 'No VPN address found. Connect Tailscale or WireGuard on this computer and it appears here.'
+                : 'This computer has no local network address right now.'}
+            </Alert>
+          )
         ) : (
           <>
             <Code>{json as string}</Code>

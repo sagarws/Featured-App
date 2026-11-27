@@ -26,7 +26,8 @@ const valid = (m: VpsManifest): boolean =>
   isVpsPort(m.port) &&
   isAccessMode(m.accessMode) &&
   Array.isArray(m.changes) &&
-  m.changes.every(isVpsChange)
+  m.changes.every(isVpsChange) &&
+  (m.tunnelPort === undefined || m.tunnelPort === null || (Number.isInteger(m.tunnelPort) && m.tunnelPort > 0 && m.tunnelPort < 65536))
 
 export const readManifest = (): VpsManifest | null => {
   try {

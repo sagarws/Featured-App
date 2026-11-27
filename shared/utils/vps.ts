@@ -64,7 +64,7 @@ export const isVpsUsername = (v: unknown): v is string => typeof v === 'string' 
 export const isVpsPort = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= VPS_PORT_RANGE.first && v <= VPS_PORT_RANGE.last
 
-export const isAccessMode = (v: unknown): v is VpsAccessMode => v === 'local' || v === 'vpn'
+export const isAccessMode = (v: unknown): v is VpsAccessMode => v === 'local' || v === 'vpn' || v === 'relay'
 
 export const isVpsChange = (v: unknown): v is VpsChange => typeof v === 'string' && (VPS_CHANGES as readonly string[]).includes(v)
 
@@ -147,7 +147,19 @@ export const sshCommand = (host: string, user: string, port: number): string =>
 
 /** The address the details should point at for a mode, or null when there is none (no VPN). */
 export const hostForMode = (network: Pick<VpsNetwork, 'lanIp' | 'vpnIp'>, mode: VpsAccessMode): string | null =>
-  mode === 'vpn' ? network.vpnIp : network.lanIp
+  mode === 'vpn' ? network.vpnIp : mode === 'local' ? network.lanIp : null
+
+/** Host and port for the connection details: the relay's for "relay" (once the tunnel is online), else this computer's. */
+export const endpointForMode = (
+  network: Pick<VpsNetwork, 'lanIp' | 'vpnIp'> | null,
+  tunnel: { state: string; host: string | null; port: number | null },
+  mode: VpsAccessMode,
+  sshPort: number
+): { host: string; port: number } | null => {
+  if (mode === 'relay') return tunnel.state === 'online' && tunnel.host && tunnel.port ? { host: tunnel.host, port: tunnel.port } : null
+  const host = network ? hostForMode(network, mode) : null
+  return host ? { host, port: sshPort } : null
+}
 
 // ── Addresses ─────────────────────────────────────────────────────────────
 
@@ -261,7 +273,9 @@ export const buildSshdConfig = (input: SshdConfigInput): string => {
     'StrictModes yes',
     'LogLevel VERBOSE',
     'Subsystem sftp internal-sftp',
-    ...(input.penalties ? ['PerSourcePenalties authfail:30s max:600s'] : []),
+    // Through the relay every visitor arrives from 127.0.0.1: per-address penalties there would let one attacker lock
+    // out everyone, so loopback is exempt — the relay and the app ban by the visitor's real address instead.
+    ...(input.penalties ? ['PerSourcePenalties authfail:30s max:600s', 'PerSourcePenaltyExemptList 127.0.0.1/32,::1/128'] : []),
     // Last: Match blocks run to the end of the file.
     `Match Address *,${VPS_ALLOWED_SOURCES.map(source => `!${source}`).join(',')}`,
     '\tDenyUsers *',

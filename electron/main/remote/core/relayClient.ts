@@ -42,7 +42,8 @@ const takeIce = (line: Record<string, unknown>): void => {
 /** wss://… (WebSocket, e.g. behind Cloudflare Tunnel) or host:port (plain TCP). */
 export const isWebSocketRelay = (relay: string): boolean => /^wss?:\/\//i.test(relay)
 
-const open = async (relay: string, timeoutMs = 8000): Promise<RelayConn> => {
+/** A connection to the relay: plain TCP or WebSocket. Also used by VPS Manager's SSH tunnel. */
+export const openRelay = async (relay: string, timeoutMs = 8000): Promise<RelayConn> => {
   if (isWebSocketRelay(relay)) {
     const ws = await wsConnect(relay, timeoutMs)
     ws.setNoDelay(true)
@@ -74,7 +75,7 @@ const openTcp = (relay: string, timeoutMs: number): Promise<RelayConn> =>
 
 /** Client: a pipe to `deviceId` through the relay. */
 export const dialThroughRelay = async (relay: string, deviceId: string): Promise<RelayConn> => {
-  const socket = await open(relay)
+  const socket = await openRelay(relay)
   try {
     await readLine(socket, 8000)
     writeLine(socket, { op: 'connect', id: deviceId })
@@ -90,7 +91,7 @@ export const dialThroughRelay = async (relay: string, deviceId: string): Promise
 
 /** Is `deviceId` registered on the relay right now? */
 export const relayLookup = async (relay: string, deviceId: string): Promise<boolean> => {
-  const socket = await open(relay, 4000)
+  const socket = await openRelay(relay, 4000)
   try {
     await readLine(socket, 4000)
     writeLine(socket, { op: 'lookup', id: deviceId })
@@ -145,7 +146,7 @@ export class RelayHost {
     this.events.onState('connecting', null)
     let socket: RelayConn
     try {
-      socket = await open(this.relay)
+      socket = await openRelay(this.relay)
     } catch (error) {
       return this.scheduleRetry(error instanceof Error ? error.message : String(error))
     }
@@ -191,7 +192,7 @@ export class RelayHost {
   private async accept(token: string, from: string): Promise<void> {
     let socket: RelayConn | null = null
     try {
-      socket = await open(this.relay)
+      socket = await openRelay(this.relay)
       await readLine(socket, 8000)
       writeLine(socket, { op: 'accept', token })
       const answer = await readLine(socket, 8000)

@@ -453,8 +453,8 @@ describe('relay (outside the office network)', () => {
       const res = await fetch(`${base}/version`)
       expect(res.headers.get('content-type')).toBe('application/json')
       const body = (await res.json()) as Record<string, unknown>
-      expect(body).toMatchObject({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: turn !== null })
-      expect(Object.keys(body).sort()).toEqual(['name', 'turn', 'uptimeSec', 'version'])
+      expect(body).toMatchObject({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: turn !== null, tunnels: false })
+      expect(Object.keys(body).sort()).toEqual(['name', 'tunnels', 'turn', 'uptimeSec', 'version'])
       expect(typeof body['uptimeSec']).toBe('number')
       expect(await (await fetch(base)).text()).toContain(`relay ${RELAY_VERSION}: running`)
     }

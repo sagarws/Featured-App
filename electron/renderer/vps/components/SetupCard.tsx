@@ -71,11 +71,14 @@ const SetupCard = ({ status, network }: { status: VpsStatus; network: VpsNetwork
             <ToggleButtonGroup exclusive size='small' value={mode} onChange={(_e, v: VpsAccessMode | null) => v && setMode(v)} fullWidth>
               <ToggleButton value='local'>Local network</ToggleButton>
               <ToggleButton value='vpn'>Remote via VPN</ToggleButton>
+              <ToggleButton value='relay'>Internet (relay)</ToggleButton>
             </ToggleButtonGroup>
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 1 }}>
               {mode === 'local'
                 ? 'Devices on the same Wi-Fi or office network.'
-                : 'Anywhere, through a VPN such as Tailscale or WireGuard running on both computers.'}
+                : mode === 'vpn'
+                  ? 'Anywhere, through a VPN such as Tailscale or WireGuard running on both computers.'
+                  : 'Anywhere, with plain ssh and nothing to install: through the relay server, like Remote Desktop. Anyone on the internet can try the password, so use a strong one.'}
             </Typography>
             {mode === 'vpn' && network && !network.vpnIp && (
               <Alert severity='info' sx={{ mt: 1.5 }}>

@@ -16,13 +16,14 @@ const ConnectionCard = ({
   status,
   network,
   metrics,
-  host,
+  endpoint,
   onDisconnect
 }: {
   status: VpsStatus
   network: VpsNetwork | null
   metrics: VpsMetrics | null
-  host: string | null
+  /** Where visitors connect in the current access mode (the relay's host / port in relay mode). */
+  endpoint: { host: string; port: number } | null
   onDisconnect: () => void
 }) => {
   const api = window.printAgent.vps
@@ -89,6 +90,7 @@ const ConnectionCard = ({
     ) : null
 
   const lockedUntil = status.lockout?.lockedUntil
+  const host = endpoint?.host ?? null
 
   return (
     <SectionCard
@@ -137,7 +139,7 @@ const ConnectionCard = ({
           </Stack>
         }
       />
-      <InfoRow label='SSH port' mono value={server.port} />
+      <InfoRow label='SSH port' mono value={endpoint && endpoint.port !== server.port ? `${endpoint.port} (relay → ${server.port} on this computer)` : server.port} />
       <InfoRow label='Authentication' value='Password' />
       <InfoRow label='Host key' mono value={server.hostKeyFingerprint ?? '—'} />
       <InfoRow label='Server uptime' value={metrics && metrics.serverUptime !== null ? formatDuration(metrics.serverUptime) : '—'} />

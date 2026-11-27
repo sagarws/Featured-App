@@ -26,7 +26,7 @@
  * (plain TCP clients wait for the relay's nonce) is plain TCP.
  */
 import { createHash, createHmac, createPublicKey, randomBytes, verify } from 'node:crypto'
-import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
+import { connect as netConnect, createServer, isIP, type AddressInfo, type Server, type Socket } from 'node:net'
 import { Duplex } from 'node:stream'
 import { connect as tlsConnect } from 'node:tls'
 
@@ -35,11 +35,14 @@ import { connect as tlsConnect } from 'node:tls'
  * "version") with every change, so a deployed server can be told apart.
  *   1.0.0  relay over TCP and WebSocket
  *   1.1.0  short-lived TURN logins (TURN_SECRET / TURN_URLS), GET /version
+ *   1.2.0  SSH tunnels for VPS Manager: a public port per computer (SSH_TUNNEL_PORTS)
  */
-export const RELAY_VERSION = '1.1.0'
+export const RELAY_VERSION = '1.2.0'
 const STARTED_AT = Date.now()
 
 const REGISTER_LABEL = 'featured-remote-relay/v1 register'
+/** What a VPS Manager computer signs to open its SSH tunnel (a different label: a Remote Desktop registration cannot be replayed as one). */
+const TUNNEL_LABEL = 'featured-remote-relay/v1 tunnel'
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 const SETUP_TIMEOUT_MS = 10_000
 const PING_MS = 25_000
@@ -215,6 +218,8 @@ export interface RelayInfo {
   version: string
   /** Does this relay hand out TURN logins? */
   turn: boolean
+  /** Does this relay open SSH tunnels (VPS Manager)? */
+  tunnels: boolean
   uptimeSec: number
 }
 
@@ -388,12 +393,53 @@ export const turnFromEnv = (env: NodeJS.ProcessEnv = process.env): RelayTurn | n
   return { secret, urls, ...(ttl > 0 ? { ttlSec: ttl } : {}) }
 }
 
+/**
+ * SSH tunnels (VPS Manager): ports the relay may open, one per computer. A
+ * computer behind any router or CGNAT keeps an outbound control connection;
+ * anyone can then `ssh -p <port> user@relay` and the bytes are piped to that
+ * computer's SSH server. SSH itself encrypts and authenticates end to end,
+ * so the relay sees nothing. `first: 0` = any free port (tests).
+ */
+export interface TunnelPorts {
+  first: number
+  last: number
+}
+
+/** Limits per visitor address on a tunnel port (the relay cannot see SSH logins; the computer reports bad ones with tunnel-ban). */
+export const TUNNEL_LIMITS = {
+  /** New connections per address per minute; more = banned for banMinutes. */
+  perMinute: 10,
+  /** Open connections per address at once. */
+  concurrent: 4,
+  /** Waiting (not yet accepted) connections per tunnel. */
+  pending: 20,
+  banMinutes: 10,
+  /** The longest ban a computer may ask for. */
+  maxBanMinutes: 24 * 60
+} as const
+
+/** SSH_TUNNEL_PORTS="22000-22999" from the environment; unset = 22000-22999, "off" = no tunnels. */
+export const tunnelPortsFromEnv = (env: NodeJS.ProcessEnv = process.env): TunnelPorts | null => {
+  const value = (env['SSH_TUNNEL_PORTS'] ?? '22000-22999').trim()
+  if (value === 'off' || value === '') return null
+  const m = /^(\d{2,5})-(\d{2,5})$/.exec(value)
+  if (!m) return null
+  const first = Number(m[1])
+  const last = Number(m[2])
+  return first >= 1024 && last <= 65535 && first <= last ? { first, last } : null
+}
+
+/** "::ffff:1.2.3.4" → "1.2.3.4". */
+const plainAddress = (address: string | undefined): string => (address ?? '?').replace(/^::ffff:/, '')
+
 export interface RelayOptions {
   port: number
   host?: string
   log?: (line: string) => void
   /** Hand out TURN logins (see RelayTurn). Omitted = the apps use their own TURN settings. */
   turn?: RelayTurn | null
+  /** Ports for VPS Manager SSH tunnels. Omitted / null = tunnels are refused. */
+  tunnels?: TunnelPorts | null
 }
 
 export const startRelay = (options: RelayOptions): Promise<Server> => {
@@ -404,7 +450,116 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
   const turn = options.turn ?? null
   /** Added to 'registered' and 'ready': a fresh TURN login, when this relay has a TURN server. */
   const ice = (): Record<string, unknown> => (turn ? { ice: turnGrant(turn) } : {})
-  const info = (): RelayInfo => ({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: !!turn, uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000) })
+  const info = (): RelayInfo => ({ name: 'featured-remote-relay', version: RELAY_VERSION, turn: !!turn, tunnels: !!options.tunnels, uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000) })
+
+  // ── SSH tunnels (VPS Manager) ───────────────────────────────────────────
+  interface Tunnel {
+    id: string
+    control: RelayConn
+    server: Server
+    port: number
+    /** Visitor address → banned until (ms). */
+    bans: Map<string, number>
+    /** Visitor address → recent connection times (ms). */
+    recent: Map<string, number[]>
+    /** Visitor address → open connections. */
+    open: Map<string, number>
+    pending: number
+  }
+  const tunnels = new Map<string, Tunnel>()
+  const tunnelTokens = new Map<string, { tunnel: Tunnel; client: Socket; timer: NodeJS.Timeout }>()
+
+  /** Keep the per-address maps from growing without bound under a scan. */
+  const prune = (tunnel: Tunnel, now: number): void => {
+    if (tunnel.recent.size > 10_000) for (const [ip, times] of tunnel.recent) if (!times.some(t => now - t < 60_000)) tunnel.recent.delete(ip)
+    if (tunnel.bans.size > 10_000) for (const [ip, until] of tunnel.bans) if (until <= now) tunnel.bans.delete(ip)
+  }
+
+  const ban = (tunnel: Tunnel, ip: string, minutes: number, why: string): void => {
+    tunnel.bans.set(ip, Date.now() + minutes * 60_000)
+    log(`tunnel ${tunnel.id}: banned ${ip} for ${minutes} min (${why})`)
+  }
+
+  /** A visitor on a tunnel's public port: checked, held paused, and announced to the computer. */
+  const onVisitor = (tunnel: Tunnel, socket: Socket): void => {
+    socket.on('error', () => undefined)
+    socket.pause()
+    const ip = plainAddress(socket.remoteAddress)
+    const now = Date.now()
+    prune(tunnel, now)
+    const until = tunnel.bans.get(ip)
+    if (until && until > now) return void socket.destroy()
+    if (until) tunnel.bans.delete(ip)
+    const recent = (tunnel.recent.get(ip) ?? []).filter(t => now - t < 60_000)
+    recent.push(now)
+    tunnel.recent.set(ip, recent)
+    if (recent.length > TUNNEL_LIMITS.perMinute) {
+      ban(tunnel, ip, TUNNEL_LIMITS.banMinutes, 'too many connections')
+      return void socket.destroy()
+    }
+    if ((tunnel.open.get(ip) ?? 0) >= TUNNEL_LIMITS.concurrent || tunnel.pending >= TUNNEL_LIMITS.pending) return void socket.destroy()
+    tunnel.open.set(ip, (tunnel.open.get(ip) ?? 0) + 1)
+    socket.once('close', () => {
+      const left = (tunnel.open.get(ip) ?? 1) - 1
+      if (left > 0) tunnel.open.set(ip, left)
+      else tunnel.open.delete(ip)
+    })
+    const token = randomBytes(18).toString('base64url')
+    tunnel.pending++
+    const settle = (): void => {
+      if (!tunnelTokens.delete(token)) return
+      clearTimeout(timer)
+      tunnel.pending--
+    }
+    const timer = setTimeout(() => {
+      settle()
+      socket.destroy()
+    }, SETUP_TIMEOUT_MS)
+    tunnelTokens.set(token, { tunnel, client: socket, timer })
+    socket.once('close', settle)
+    writeLine(tunnel.control, { op: 'tunnel-incoming', token, from: ip })
+  }
+
+  const listenOn = (port: number): Promise<Server | null> =>
+    new Promise(resolve => {
+      const server = createServer()
+      server.once('error', () => resolve(null))
+      server.listen(port, options.host ?? '0.0.0.0', () => resolve(server))
+    })
+
+  /**
+   * The computer's public port: the one it had before (it asks for it), else
+   * one derived from its ID — so it stays the same across restarts of either
+   * side and the connection details do not change — else the next free one.
+   */
+  const openTunnelPort = async (id: string, preferred: number): Promise<{ server: Server; port: number } | null> => {
+    const range = options.tunnels as TunnelPorts
+    if (range.first === 0) {
+      const server = await listenOn(0)
+      return server ? { server, port: (server.address() as AddressInfo).port } : null
+    }
+    const size = range.last - range.first + 1
+    const hashed = range.first + (createHash('sha256').update(id).digest().readUInt32BE(0) % size)
+    const taken = new Set([...tunnels.values()].map(t => t.port))
+    const candidates = [preferred >= range.first && preferred <= range.last ? preferred : null, ...Array.from({ length: size }, (_, i) => range.first + ((hashed - range.first + i) % size))]
+    for (const port of candidates) {
+      if (port === null || taken.has(port)) continue
+      const server = await listenOn(port)
+      if (server) return { server, port }
+    }
+    return null
+  }
+
+  /** Does `first` prove ownership of the Ed25519 key its ID comes from (signature over label + nonce)? */
+  const proves = (first: Record<string, unknown>, nonce: Buffer, label: string): boolean => {
+    try {
+      const pub = Buffer.from(str(first['pub']), 'base64')
+      const key = createPublicKey({ key: pub, format: 'der', type: 'spki' })
+      return key.asymmetricKeyType === 'ed25519' && relayDeviceId(pub) === str(first['id']) && verify(null, Buffer.concat([Buffer.from(label), nonce]), key, Buffer.from(str(first['sig']), 'base64'))
+    } catch {
+      return false
+    }
+  }
 
   const allowed = (address: string): boolean => {
     const now = Date.now()
@@ -454,6 +609,88 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
         if (hosts.get(id) === socket) hosts.delete(id)
         log(`host offline ${id}`)
       })
+      return
+    }
+
+    if (first['op'] === 'tunnel-register') {
+      if (!options.tunnels) {
+        writeLine(socket, { op: 'error', message: 'This relay does not offer SSH tunnels (it needs relay 1.2.0 with SSH_TUNNEL_PORTS).' })
+        return void socket.end()
+      }
+      if (!proves(first, nonce, TUNNEL_LABEL)) {
+        writeLine(socket, { op: 'error', message: 'Registration refused.' })
+        return void socket.end()
+      }
+      const id = str(first['id'])
+      const previous = tunnels.get(id)
+      if (previous) {
+        tunnels.delete(id)
+        previous.server.close()
+        previous.control.destroy()
+      }
+      const opened = await openTunnelPort(id, Number(first['port']))
+      if (!opened) {
+        writeLine(socket, { op: 'error', message: 'The relay has no free tunnel port.' })
+        return void socket.end()
+      }
+      const tunnel: Tunnel = { id, control: socket, server: opened.server, port: opened.port, bans: new Map(), recent: new Map(), open: new Map(), pending: 0 }
+      opened.server.on('connection', visitor => onVisitor(tunnel, visitor))
+      tunnels.set(id, tunnel)
+      writeLine(socket, { op: 'tunnel-ready', id, port: opened.port })
+      log(`tunnel online ${id} on :${opened.port} (${address})`)
+      const ping = setInterval(() => writeLine(socket, { op: 'ping' }), PING_MS)
+      socket.once('close', () => {
+        clearInterval(ping)
+        // The port closes with the computer: nothing listens for SSH while it is offline.
+        tunnel.server.close()
+        for (const [token, entry] of tunnelTokens) {
+          if (entry.tunnel !== tunnel) continue
+          tunnelTokens.delete(token)
+          clearTimeout(entry.timer)
+          entry.client.destroy()
+        }
+        if (tunnels.get(id) === tunnel) tunnels.delete(id)
+        log(`tunnel offline ${id}`)
+      })
+      // Control messages from the computer: pongs, and bans for addresses that failed to log in.
+      void (async () => {
+        for (;;) {
+          let line: Record<string, unknown>
+          try {
+            line = await readLine(socket, 70_000)
+          } catch {
+            return void socket.destroy()
+          }
+          if (line['op'] === 'tunnel-ban') {
+            const ip = str(line['ip'])
+            const minutes = Math.min(TUNNEL_LIMITS.maxBanMinutes, Math.max(1, Math.round(Number(line['minutes']) || 60)))
+            if (isIP(ip)) ban(tunnel, ip, minutes, 'reported by the computer')
+          }
+        }
+      })()
+      return
+    }
+
+    if (first['op'] === 'tunnel-accept') {
+      const token = str(first['token'])
+      const entry = tunnelTokens.get(token)
+      if (!entry) return void socket.destroy()
+      tunnelTokens.delete(token)
+      clearTimeout(entry.timer)
+      entry.tunnel.pending--
+      const client = entry.client
+      // Only the computer's side gets "ready": the visitor's side is raw SSH from the first byte.
+      writeLine(socket, { op: 'ready' })
+      client.pipe(socket)
+      socket.pipe(client)
+      client.resume()
+      socket.resume()
+      const close = (): void => {
+        client.destroy()
+        socket.destroy()
+      }
+      client.once('close', close)
+      socket.once('close', close)
       return
     }
 
@@ -544,17 +781,29 @@ export const startRelay = (options: RelayOptions): Promise<Server> => {
     }
     socket.on('data', onData)
   })
+  // Closing the relay closes the tunnel ports too.
+  server.on('close', () => {
+    for (const tunnel of tunnels.values()) {
+      tunnel.server.close()
+      tunnel.control.destroy()
+    }
+    tunnels.clear()
+  })
   return new Promise(resolve => server.listen(options.port, options.host ?? '0.0.0.0', () => resolve(server)))
 }
 
 export const RELAY_REGISTER_LABEL = REGISTER_LABEL
+export const RELAY_TUNNEL_LABEL = TUNNEL_LABEL
 
 // Run directly: node tools/remote-relay/relay.ts [port]
 const invokedDirectly = typeof process !== 'undefined' && process.argv[1] && /relay\.(ts|js|mjs)$/.test(process.argv[1])
 if (invokedDirectly) {
   const port = Number(process.argv[2] ?? process.env['RELAY_PORT'] ?? 47900)
   const turn = turnFromEnv()
-  void startRelay({ port, turn }).then(() =>
-    process.stdout.write(`Featured App relay ${RELAY_VERSION} listening on :${port}${turn ? ` · TURN logins for ${turn.urls.join(', ')}` : ' · no TURN (set TURN_SECRET + TURN_URLS)'}\n`)
+  const tunnels = tunnelPortsFromEnv()
+  void startRelay({ port, turn, tunnels }).then(() =>
+    process.stdout.write(
+      `Featured App relay ${RELAY_VERSION} listening on :${port}${turn ? ` · TURN logins for ${turn.urls.join(', ')}` : ' · no TURN (set TURN_SECRET + TURN_URLS)'}${tunnels ? ` · SSH tunnels on ${tunnels.first}-${tunnels.last}` : ' · no SSH tunnels'}\n`
+    )
   )
 }

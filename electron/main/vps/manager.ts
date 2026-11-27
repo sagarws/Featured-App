@@ -17,7 +17,7 @@ import type {
   VpsStepId,
   VpsSystemInfo
 } from '@shared/types/vps'
-import { parseScriptLine, redact } from '@shared/utils/vps'
+import { parseScriptLine, passwordStrength, redact } from '@shared/utils/vps'
 import { logger } from '../logger'
 import { getWindow } from '../window'
 import { adapter, currentPlatform, readManifest, removeManifest, writeManifest } from './config'
@@ -26,6 +26,7 @@ import { ElevationError, runElevated } from './elevate'
 import * as monitor from './monitor'
 import { pickPort, sshAnswers } from './network'
 import { linuxPrettyName } from './platforms/linux'
+import { setTunnelListener, startTunnel, stopTunnel, tunnelStatus } from './tunnel'
 
 /*
  * VPS Manager: one operation at a time (convert, disconnect, new password,
@@ -137,6 +138,11 @@ export const status = (): VpsStatus => {
         }
       : null,
     passwordAvailable: !!(m?.state === 'running' && getPassword(m.username)),
+    tunnel: tunnelStatus(),
+    passwordWeak: ((): boolean => {
+      const pw = m?.state === 'running' ? getPassword(m.username) : null
+      return !!pw && passwordStrength(pw) === 'weak'
+    })(),
     keptUser: m?.state === 'stopped' && m.userKept ? m.username : null,
     lockout,
     lastError
@@ -152,7 +158,21 @@ export const probe = async (): Promise<boolean> => {
   return serviceUp
 }
 
+/** The relay tunnel runs exactly while the server runs in "relay" mode. */
+const syncTunnel = (): void => {
+  const m = manifest
+  const platform = adapter()
+  if (m?.state === 'running' && m.accessMode === 'relay' && platform) {
+    startTunnel(m.port, platform.serverDir, m.tunnelPort ?? null, port => {
+      if (manifest && manifest.tunnelPort !== port) save({ ...manifest, tunnelPort: port })
+    })
+  } else {
+    stopTunnel()
+  }
+}
+
 export const initVps = async (): Promise<void> => {
+  setTunnelListener(push)
   manifest = readManifest()
   const platform = adapter()
   support = platform ? await platform.support() : { ok: false, reason: 'VPS Manager supports Windows 10/11, macOS and Ubuntu.' }
@@ -162,6 +182,7 @@ export const initVps = async (): Promise<void> => {
   }
   if (manifest?.state === 'configuring') logger.warn('[vps] a setup was interrupted; recovery is needed')
   await probe()
+  syncTunnel()
   logger.info('[vps] ready', { state: status().state, supported: support.ok })
   push()
 }
@@ -313,6 +334,7 @@ const convertNow = async (options: VpsConvertOptions): Promise<VpsStatus> => {
       startedAt: Date.now()
     })
     logger.info('[vps] setup finished', { port, changes: outcome.changes, firewall: outcome.firewall })
+    syncTunnel()
 
     // The script checked the port itself; this confirms the app can see it too.
     for (let i = 0; i < 5 && !(await sshAnswers(port)); i++) await new Promise(resolve => setTimeout(resolve, 1000))
@@ -334,6 +356,8 @@ const teardown = async (removeUser: boolean, kind: 'disconnect' | 'recover'): Pr
   const platform = adapter()
   const m = manifest
   if (!platform || !m) throw new Error('There is no VPS to disconnect.')
+  // Close the internet way in first: no new visitors while the server is taken down.
+  stopTunnel()
   setSteps(TEARDOWN_STEPS, TEARDOWN_LABELS)
   push()
   const outcome = await runScript(
@@ -344,6 +368,7 @@ const teardown = async (removeUser: boolean, kind: 'disconnect' | 'recover'): Pr
   if (!outcome.ok) {
     const message = outcome.error ?? 'Disconnecting did not finish.'
     save({ ...m, lastError: message })
+    syncTunnel()
     throw new Error(`${message} The steps marked done were completed; try again to finish.`)
   }
   steps?.forEach(s => {
@@ -403,6 +428,7 @@ export const revealPassword = (): string => {
 
 export const setAccessMode = (mode: VpsAccessMode): VpsStatus => {
   if (manifest) save({ ...manifest, accessMode: mode })
+  syncTunnel()
   push()
   return status()
 }

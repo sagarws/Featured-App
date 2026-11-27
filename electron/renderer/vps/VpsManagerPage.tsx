@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Alert, Box, Button, CircularProgress, Grid, Stack, Typography } from '@mui/material'
 import toast from 'react-hot-toast'
 import type { VpsAccessMode } from '@shared/types/vps'
-import { hostForMode } from '@shared/utils/vps'
+import { endpointForMode } from '@shared/utils/vps'
 import { useSystemInfo, useVpsMetrics, useVpsNetwork, useVpsStatus } from './hooks'
 import ConnectionCard from './components/ConnectionCard'
 import DisconnectDialog from './components/DisconnectDialog'
@@ -58,7 +58,7 @@ const VpsManagerPage = () => {
   }
 
   const server = status.server
-  const host = server && network ? hostForMode(network, server.accessMode) : null
+  const endpoint = server ? endpointForMode(network, status.tunnel, server.accessMode, server.port) : null
   const tearingDown = status.busy === 'disconnect' || status.busy === 'recover'
 
   return (
@@ -97,11 +97,18 @@ const VpsManagerPage = () => {
       {live && server ? (
         <Grid container spacing={4}>
           <Grid size={{ xs: 12, lg: 6 }}>
-            <ConnectionCard status={status} network={network} metrics={metrics} host={host} onDisconnect={() => setConfirming(true)} />
+            <ConnectionCard status={status} network={network} metrics={metrics} endpoint={endpoint} onDisconnect={() => setConfirming(true)} />
           </Grid>
           <Grid size={{ xs: 12, lg: 6 }}>
             <Stack spacing={4}>
-              <SshConfigCard host={host} username={server.username} port={server.port} mode={server.accessMode} onModeChange={m => void setMode(m)} />
+              <SshConfigCard
+                endpoint={endpoint}
+                username={server.username}
+                mode={server.accessMode}
+                tunnel={status.tunnel}
+                passwordWeak={status.passwordWeak}
+                onModeChange={m => void setMode(m)}
+              />
               <NetworkCard network={network} checking={checking} onCheckPublicIp={() => void checkPublicIp()} />
             </Stack>
           </Grid>

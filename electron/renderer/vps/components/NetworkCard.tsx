@@ -43,7 +43,8 @@ const NetworkCard = ({ network, checking, onCheckPublicIp }: { network: VpsNetwo
             : network.nat === 'direct'
               ? 'this computer has a public address. '
               : ''}
-          Password logins from public addresses are refused by the server, and no router port forwarding is set up.
+          Direct logins from public addresses are refused by the server and no router port forwarding is set up — for access from
+          any network, choose <b>Internet (relay)</b> in the connection details.
         </Alert>
       </Stack>
     </SectionCard>

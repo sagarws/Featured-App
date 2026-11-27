@@ -109,6 +109,34 @@ config for every account.
   passed straight to the root shell (`sh -c`), so nothing on disk can be
   swapped between the prompt and the run.
 
+## Internet (relay) access
+
+The third access mode. It reaches this computer from any network, with plain
+`ssh` and nothing to install, through the same relay VPS Remote Desktop
+uses (`REMOTE_SERVER.relay`, which must be a plain-TCP relay on a public
+VPS running relay 1.2.0+).
+
+```
+this computer ──outbound──▶ relay 89.116.32.17 ◀── ssh user@89.116.32.17 -p 22xxx
+```
+
+- **Tunnel core:** `electron/main/vps/tunnelCore.ts`. It registers with an
+  Ed25519 key (kept encrypted, `vps-tunnel-key.json`) and gets a stable
+  public port. Per visitor, it opens a data connection and pipes it to
+  `127.0.0.1:<ssh port>`. It runs inside the app (tray), only while the
+  server runs in this mode.
+- **SSH is end to end.** The host key seen through the relay is the server's
+  own; this was verified live.
+- **Abuse control:**
+  - The relay limits and auto-bans per visitor address.
+  - Every visitor reaches sshd from 127.0.0.1, so the app maps the local
+    source port in sshd's log back to the visitor and asks the relay to ban
+    an address after 3 wrong passwords (1 h).
+  - sshd exempts loopback from `PerSourcePenalties`, so one attacker
+    cannot lock out every relay user.
+  - The 10-failure account lockout still applies.
+  - The app warns when the password is weak in this mode.
+
 ## Disconnect
 
 Disconnect asks for confirmation, then runs one elevated script that:
